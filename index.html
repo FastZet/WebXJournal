@@ -7,8 +7,8 @@
 
     <!-- PWA Meta Tags -->
     <meta name="description" content="WebX Journal: Reclaim Your Privacy. Own Your Thoughts. Encrypted, self-hostable PWA.">
-    <meta name="theme-color" content="#1a202c"/> <!-- Dark theme color for consistency -->
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"> <!-- Placeholder for future icon -->
+    <meta name="theme-color" content="#1a202c"/>
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
     <link rel="manifest" href="/manifest.json">
 
     <!-- Google Fonts - Inter -->
@@ -19,11 +19,15 @@
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Custom CSS for Inter font and general body styling */
         body {
             font-family: 'Inter', sans-serif;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+        }
+        /* Basic focus styling for accessibility */
+        *:focus {
+            outline: 2px solid #60a5fa; /* blue-400 */
+            outline-offset: 2px;
         }
     </style>
 </head>
@@ -44,14 +48,17 @@
                 Your secure, client-side encrypted journal. Powered by you.
             </p>
 
-            <!-- Placeholder for Google Sign-In Button -->
-            <button id="google-signin-button"
-                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50">
-                Sign in with Google
-            </button>
+            <!-- Container for dynamic content (login/registration forms, journal, etc.) -->
+            <div id="app-content-container" class="w-full">
+                <!-- Content will be injected here by main.js -->
+                <p class="text-gray-500">Loading application...</p>
+            </div>
+
+            <!-- Message display area -->
+            <div id="app-message" class="mt-4 p-3 rounded-lg text-center hidden"></div>
 
             <p class="mt-6 text-sm text-gray-500">
-                Data is encrypted on your device and stored locally or in your personal Google Drive.
+                Data is encrypted on your device and stored locally.
             </p>
         </main>
 
@@ -60,7 +67,7 @@
         </footer>
     </div>
 
-    <!-- Main application JavaScript bundle will be loaded here -->
+    <!-- Main application JavaScript bundle -->
     <script type="module" src="/src/main.js"></script>
 
 </body>
