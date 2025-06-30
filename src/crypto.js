@@ -5,9 +5,9 @@
 export async function deriveKey(password, salt, purpose) {
     const enc = new TextEncoder();
     const passwordBytes = enc.encode(password);
-    
+
     // Base key from password
-    const baseKey = await crypto.subtle.importKey(
+    const baseKey = await window.crypto.subtle.importKey( // Changed to window.crypto.subtle
         'raw',
         passwordBytes,
         { name: 'PBKDF2' },
@@ -16,7 +16,7 @@ export async function deriveKey(password, salt, purpose) {
     );
 
     // Derived key for specific purpose
-    const derivedBits = await crypto.subtle.deriveBits(
+    const derivedBits = await window.crypto.subtle.deriveBits( // Changed to window.crypto.subtle
         {
             name: 'PBKDF2',
             salt: salt, // Use the provided salt
@@ -32,7 +32,7 @@ export async function deriveKey(password, salt, purpose) {
         return new Uint8Array(derivedBits);
     } else if (purpose === 'encryption') {
         // Import the derived bits as an AES-GCM key for encryption
-        return await crypto.subtle.importKey(
+        return await window.crypto.subtle.importKey( // Changed to window.crypto.subtle
             'raw',
             derivedBits,
             { name: 'AES-GCM', length: 256 },
@@ -53,14 +53,15 @@ export async function compareHashes(hash1, hash2) {
     if (hash1.byteLength !== hash2.byteLength) {
         return false;
     }
-    return crypto.subtle.timingSafeEqual(hash1, hash2);
+    // This is the problematic line
+    return window.crypto.subtle.timingSafeEqual(hash1, hash2); // Changed to window.crypto.subtle
 }
 
 // Function to encrypt data using AES-GCM
 export async function encryptData(data, key) {
-    const iv = crypto.getRandomValues(new Uint8Array(12)); // 12-byte IV is standard for AES-GCM
+    const iv = window.crypto.getRandomValues(new Uint8Array(12)); // Changed to window.crypto.getRandomValues
     const algorithm = { name: 'AES-GCM', iv: iv };
-    const encryptedData = await crypto.subtle.encrypt(
+    const encryptedData = await window.crypto.subtle.encrypt( // Changed to window.crypto.subtle
         algorithm,
         key,
         new TextEncoder().encode(data)
@@ -74,7 +75,7 @@ export async function encryptData(data, key) {
 // Function to decrypt data using AES-GCM
 export async function decryptData(encryptedData, key, iv) {
     const algorithm = { name: 'AES-GCM', iv: iv };
-    const decryptedData = await crypto.subtle.decrypt(
+    const decryptedData = await window.crypto.subtle.decrypt( // Changed to window.crypto.subtle
         algorithm,
         key,
         encryptedData
