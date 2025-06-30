@@ -23,17 +23,24 @@ export function base64ToUint8Array(str) {
     return new Uint8Array(atob(str).split('').map(char => char.charCodeAt(0)));
 }
 
+// NEW FUNCTION: Ensures the message container exists in the DOM
+export function initializeMessageContainer() {
+    let container = document.getElementById('message-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'message-container';
+        // Initial hidden state for transitions
+        container.className = 'fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-500 opacity-0 pointer-events-none';
+        document.body.appendChild(container);
+    }
+    return container;
+}
+
+
 // Function to display messages to the user (e.g., success, error, info)
 export function displayMessage(message, type = 'text-blue-300 bg-gray-700') {
-    const messageContainer = document.getElementById('message-container');
-
-    // If the message container doesn't exist, log to console as a fallback
-    // This is for scenarios where the UI might not be fully loaded or has been replaced.
-    if (!messageContainer) {
-        console.warn("Message container not initialized. Message will be logged only:", message);
-        console.log(`Message: ${message} (Type: ${type})`);
-        return;
-    }
+    // Ensure the message container is initialized before displaying a message
+    const messageContainer = initializeMessageContainer();
 
     // Clear any previous timer to ensure the new message is displayed for the full duration
     if (messageTimer) {
@@ -41,6 +48,7 @@ export function displayMessage(message, type = 'text-blue-300 bg-gray-700') {
     }
 
     messageContainer.textContent = message;
+    // Update class names to show the message with specified type
     messageContainer.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-500 ${type}`;
     messageContainer.style.opacity = '1';
     messageContainer.style.pointerEvents = 'auto'; // Make it clickable/visible
