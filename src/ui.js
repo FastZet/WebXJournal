@@ -24,7 +24,7 @@ let warningShown = false; // Flag to ensure warning is shown only once per sessi
 // --- Global UI Elements (appended to body once) ---
 const loadingOverlay = document.createElement('div');
 loadingOverlay.id = 'loading-overlay';
-loadingOverlay.className = 'fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden';
+loadingOverlay.className = 'fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden'; // Ensure 'hidden' is applied
 loadingOverlay.innerHTML = `
     <div class="bg-gray-800 p-6 rounded-lg shadow-xl flex flex-col items-center">
         <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"></div>
@@ -41,7 +41,7 @@ document.body.appendChild(messageContainer);
 // Timeout warning popup element
 const warningPopup = document.createElement('div');
 warningPopup.id = 'timeout-warning-popup';
-warningPopup.className = 'fixed bottom-4 right-4 bg-yellow-800 text-white p-4 rounded-lg shadow-xl z-50 hidden transition-opacity duration-300';
+warningPopup.className = 'fixed bottom-4 right-4 bg-yellow-800 text-white p-4 rounded-lg shadow-xl z-50 hidden transition-opacity duration-300'; // Ensure 'hidden' is applied
 warningPopup.innerHTML = `
     <p class="font-bold mb-2">Session expiring soon!</p>
     <p class="text-sm">Your session will end in <span id="warning-countdown"></span> seconds. Please save any unsaved work.</p>
@@ -52,7 +52,7 @@ document.body.appendChild(warningPopup);
 // Custom delete confirmation modal element
 const deleteConfirmationModal = document.createElement('div');
 deleteConfirmationModal.id = 'delete-confirmation-modal';
-deleteConfirmationModal.className = 'fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden';
+deleteConfirmationModal.className = 'fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden'; // Ensure 'hidden' is applied
 deleteConfirmationModal.innerHTML = `
     <div class="bg-gray-800 p-8 rounded-lg shadow-xl text-white max-w-sm w-full text-center">
         <h3 class="text-2xl font-bold mb-4">Confirm Deletion</h3>
@@ -202,7 +202,9 @@ export function renderMainJournalApp(container, username) {
     container.innerHTML = `
         <div class="flex flex-col h-screen bg-gray-900 text-gray-100">
             <header class="bg-gray-800 p-4 shadow-md flex justify-between items-center">
-                <h1 class="text-2xl font-bold">WebX Journal</h1>
+                <h1 class="text-2xl font-bold flex items-center">
+                    <img src="favicon.png" alt="WebX Journal Favicon" class="h-8 w-8 mr-2"> WebX Journal
+                </h1>
                 <div class="flex items-center space-x-4">
                     <span class="text-gray-400">Logged in as: <span class="font-semibold text-white">${username}</span></span>
                     <span id="session-timer" class="text-gray-400 text-sm">Session: --:--</span>
@@ -687,17 +689,3 @@ export function removeJournalEntryFromList(id) {
         entryElement.remove();
     }
 }
-
-// Add a simple line-clamp utility if not provided by Tailwind or another CSS framework.
-// For demonstration, direct CSS is applied. If you have TailwindCSS, you can enable
-// the @tailwindcss/line-clamp plugin and use 'line-clamp-3' directly in your CSS.
-// For this code, I've added a basic CSS class that mimics line-clamp.
-// You might need to add this to your main CSS file:
-/*
-.line-clamp-3 {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}
-*/
