@@ -30,15 +30,32 @@ export function initializeIndexedDB() {
 
         request.onupgradeneeded = (event) => {
             const tempDb = event.target.result;
-            console.log('[IndexedDB] Upgrade needed or first time creation.');
-            if (!tempDb.objectStoreNames.contains(STORE_USER_PROFILES)) {
-                tempDb.createObjectStore(STORE_USER_PROFILES, { keyPath: 'username' });
-                console.log(`[IndexedDB] Object store '${STORE_USER_PROFILES}' created.`);
+            const oldVersion = event.oldVersion;
+            const newVersion = event.newVersion;
+            console.log(`[IndexedDB] Upgrade needed from version ${oldVersion} to ${newVersion}.`);
+
+            // This block runs if upgrading from a non-existent DB or version 0 to 1
+            if (oldVersion < 1) {
+                if (!tempDb.objectStoreNames.contains(STORE_USER_PROFILES)) {
+                    tempDb.createObjectStore(STORE_USER_PROFILES, { keyPath: 'username' });
+                    console.log(`[IndexedDB] Object store '${STORE_USER_PROFILES}' created.`);
+                }
+                if (!tempDb.objectStoreNames.contains(STORE_JOURNAL_ENTRIES)) {
+                    tempDb.createObjectStore(STORE_JOURNAL_ENTRIES, { keyPath: 'id' });
+                    console.log(`[IndexedDB] Object store '${STORE_JOURNAL_ENTRIES}' created.`);
+                }
             }
-            if (!tempDb.objectStoreNames.contains(STORE_JOURNAL_ENTRIES)) {
-                tempDb.createObjectStore(STORE_JOURNAL_ENTRIES, { keyPath: 'id' });
-                console.log(`[IndexedDB] Object store '${STORE_JOURNAL_ENTRIES}' created.`);
-            }
+
+            // Example for future migrations (if DB_VERSION changes to 2, 3, etc.):
+            // if (oldVersion < 2) {
+            //     console.log("[IndexedDB] Migrating to DB version 2...");
+            //     // Example: If you added an index to STORE_JOURNAL_ENTRIES
+            //     // const journalStore = event.transaction.objectStore(STORE_JOURNAL_ENTRIES);
+            //     // if (!journalStore.indexNames.contains('timestamp')) {
+            //     //     journalStore.createIndex('timestamp', 'timestamp', { unique: false });
+            //     // }
+            // }
+            // Add more if (oldVersion < X) blocks for each subsequent version upgrade
         };
 
         request.onsuccess = (event) => {
@@ -246,5 +263,34 @@ export function clearAllData() {
             console.error('[IndexedDB] Error clearing all data:', error);
             reject(new Error(`Failed to clear all data: ${error.message}`));
         });
+    });
+/**
+ * Bulk imports multiple encrypted journal entries to IndexedDB.
+ * Used during data import to efficiently add many entries.
+ * @param {Array<Object>} entries An array of encrypted journal entry objects.
+ * @returns {Promise<void>} A Promise that resolves when all entries are saved.
+ */
+export function bulkImportJournalEntries(entries) {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            reject(new Error('IndexedDB not initialized.'));
+            return;
+        }
+        const transaction = db.transaction([STORE_JOURNAL_ENTRIES], 'readwrite');
+        const store = transaction.objectStore(STORE_JOURNAL_ENTRIES);
+
+        entries.forEach(entry => {
+            store.put(entry); // Use put to add or update
+        });
+
+        transaction.oncomplete = () => {
+            console.log(`[IndexedDB] Bulk imported ${entries.length} journal entries.`);
+            resolve();
+        };
+
+        transaction.onerror = (event) => {
+            console.error('[IndexedDB] Error during bulk import:', event.target.error);
+            reject(new Error(`Failed to bulk import entries: ${event.target.error.message}`));
+        };
     });
 }
