@@ -216,8 +216,7 @@ export function renderMainJournalApp(container, username) {
                 </div>
             </header>
 
-            <main class="flex flex-1 overflow-hidden">
-                <section id="journal-display-area" class="w-full p-4 overflow-y-auto">
+            <main class="flex flex-1 overflow-hidden p-6 max-w-screen-lg mx-auto w-full"> <section id="journal-display-area" class="w-full overflow-y-auto">
                     </section>
             </main>
         </div>
@@ -603,28 +602,31 @@ export function renderJournalEntry(entry) {
 
     const entryElement = document.createElement('div');
     entryElement.id = `entry-${entry.id}`;
-    // Added 'h-36' for uniform height and fixed line-clamp for content preview
-    entryElement.className = `journal-entry-item bg-gray-800 p-4 rounded-lg shadow-md transition-all duration-200 ease-in-out ${entry.isCorrupted ? 'border-l-4 border-red-500' : 'border-l-4 border-indigo-500'} flex flex-col justify-between h-40`;
+    // Removed fixed height; using flexbox and line-clamp to manage height automatically
+    entryElement.className = `journal-entry-item bg-gray-800 p-4 rounded-lg shadow-md transition-all duration-200 ease-in-out ${entry.isCorrupted ? 'border-l-4 border-red-500' : 'border-l-4 border-indigo-500'}`;
 
     const date = new Date(entry.timestamp);
     const formattedDate = date.toLocaleString(); // Adjust as needed for specific format
 
     entryElement.innerHTML = `
-        <div>
-            <h3 class="text-xl font-semibold mb-1 text-indigo-300">${utils.escapeHTML(entry.title)}</h3>
-            <p class="text-xs text-gray-400 mb-2">${formattedDate}</p>
-            <div class="journal-content-preview text-gray-300 text-sm overflow-hidden line-clamp-3 leading-relaxed mb-3">
-                ${utils.escapeHTML(entry.content)}
+        <div class="flex justify-between items-start mb-2">
+            <div>
+                <h3 class="text-xl font-semibold text-indigo-300">${utils.escapeHTML(entry.title)}</h3>
+                <p class="text-xs text-gray-400">${formattedDate}</p>
+            </div>
+            <div class="flex space-x-2">
+                <button class="open-entry-button bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-md text-xs" data-id="${entry.id}">Open</button>
+                <button class="edit-entry-button bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded-md text-xs" data-id="${entry.id}">Edit</button>
+                <button class="delete-entry-button bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-xs" data-id="${entry.id}">Delete</button>
             </div>
         </div>
-        <div class="flex space-x-2 mt-auto"> <button class="view-entry-button bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-md text-xs" data-id="${entry.id}">View Full</button>
-            <button class="edit-entry-button bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded-md text-xs" data-id="${entry.id}">Edit</button>
-            <button class="delete-entry-button bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-xs" data-id="${entry.id}">Delete</button>
+        <div class="journal-content-preview text-gray-300 text-sm overflow-hidden line-clamp-3 leading-relaxed">
+            ${utils.escapeHTML(entry.content)}
         </div>
     `;
 
     // Add event listeners for buttons
-    entryElement.querySelector('.view-entry-button').addEventListener('click', () => {
+    entryElement.querySelector('.open-entry-button').addEventListener('click', () => {
         renderJournalView('full-entry', entry); // Call new function for full view
     });
 
