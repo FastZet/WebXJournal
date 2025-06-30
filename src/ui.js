@@ -8,19 +8,20 @@
 import * as auth from './auth.js';
 import * as utils from './utils.js'; // For utility functions like displayMessage
 
-// CurrentEditingEntryId and mainJournalApp methods will now communicate via window.WebXJournal
+// Global state variables
 let currentEditingEntryId = null; // To store the ID of the entry being edited
+let journalEntryTitleInput;   // Global reference to the title input field
+let journalEntryContentInput; // Global reference to the content input field
+let currentView = 'list';     // Tracks the current view: 'list', 'form', 'full-entry'
 
-// --- Global UI Elements (now including form inputs and session timer) ---
-let journalEntryTitleInput;   // Declared globally
-let journalEntryContentInput; // Declared globally
+// Session timer variables
 let sessionTimerInterval;
 let sessionTimeoutId; // For the inactivity timeout
-
-const SESSION_DURATION_SECONDS = 300; // Changed to 5 minutes (300 seconds)
+const SESSION_DURATION_SECONDS = 300; // 5 minutes (300 seconds)
 let timeLeft = SESSION_DURATION_SECONDS;
 let warningShown = false; // Flag to ensure warning is shown only once per session
 
+// --- Global UI Elements (appended to body once) ---
 const loadingOverlay = document.createElement('div');
 loadingOverlay.id = 'loading-overlay';
 loadingOverlay.className = 'fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden';
@@ -37,16 +38,33 @@ messageContainer.id = 'message-container';
 messageContainer.className = 'fixed top-4 right-4 z-50 flex flex-col items-end space-y-2 max-w-xs sm:max-w-md';
 document.body.appendChild(messageContainer);
 
-// New element for timeout warning popup
+// Timeout warning popup element
 const warningPopup = document.createElement('div');
 warningPopup.id = 'timeout-warning-popup';
-warningPopup.className = 'fixed bottom-4 right-4 bg-yellow-800 text-white p-4 rounded-lg shadow-xl z-50 hidden';
+warningPopup.className = 'fixed bottom-4 right-4 bg-yellow-800 text-white p-4 rounded-lg shadow-xl z-50 hidden transition-opacity duration-300';
 warningPopup.innerHTML = `
     <p class="font-bold mb-2">Session expiring soon!</p>
-    <p class="text-sm">Your session will end in <span id="warning-countdown"></span>. Please save any unsaved work.</p>
+    <p class="text-sm">Your session will end in <span id="warning-countdown"></span> seconds. Please save any unsaved work.</p>
     <button id="dismiss-warning" class="mt-3 bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded-md text-xs">Dismiss</button>
 `;
 document.body.appendChild(warningPopup);
+
+// Custom delete confirmation modal element
+const deleteConfirmationModal = document.createElement('div');
+deleteConfirmationModal.id = 'delete-confirmation-modal';
+deleteConfirmationModal.className = 'fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden';
+deleteConfirmationModal.innerHTML = `
+    <div class="bg-gray-800 p-8 rounded-lg shadow-xl text-white max-w-sm w-full text-center">
+        <h3 class="text-2xl font-bold mb-4">Confirm Deletion</h3>
+        <p class="mb-6">Are you sure you want to delete "<span id="delete-entry-title-placeholder" class="font-semibold text-red-400"></span>"? This action cannot be undone.</p>
+        <div class="flex justify-center space-x-4">
+            <button id="confirm-delete-yes" class="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-md font-medium">Yes, Delete</button>
+            <button id="confirm-delete-no" class="bg-gray-600 hover:bg-gray-700 text-white px-5 py-2 rounded-md font-medium">Cancel</button>
+        </div>
+    </div>
+`;
+document.body.appendChild(deleteConfirmationModal);
+
 
 /**
  * Shows the loading overlay with an optional message.
@@ -199,51 +217,14 @@ export function renderMainJournalApp(container, username) {
             </header>
 
             <main class="flex flex-1 overflow-hidden">
-                <section class="w-full lg:w-1/3 p-4 border-r border-gray-700 overflow-y-auto">
-                    <h2 class="text-xl font-semibold mb-4">New Journal Entry</h2>
-                    <form id="journal-entry-form" class="space-y-4">
-                        <div>
-                            <label for="journal-entry-title" class="block text-sm font-medium text-gray-300">Title</label>
-                            <input type="text" id="journal-entry-title" required
-                                    class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
-                        </div>
-                        <div>
-                            <label for="journal-entry-content" class="block text-sm font-medium text-gray-300">Content</label>
-                            <textarea id="journal-entry-content" rows="10" required
-                                     class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100"></textarea>
-                        </div>
-                        <div class="flex space-x-2">
-                            <button type="submit" id="save-entry-button"
-                                     class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                                Save Entry
-                            </button>
-                            <button type="button" id="clear-form-button"
-                                     class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-gray-800 bg-gray-300 hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
-                                Clear Form
-                            </button>
-                        </div>
-                    </form>
-                </section>
-
-                <section class="w-full lg:w-2/3 p-4 overflow-y-auto">
-                    <h2 class="text-xl font-semibold mb-4">Your Entries</h2>
-                    <div id="journal-entries-list" class="space-y-4">
-                        </div>
-                </section>
+                <section id="journal-display-area" class="w-full p-4 overflow-y-auto">
+                    </section>
             </main>
         </div>
     `;
     utils.initializeMessageContainer(messageContainer); // Initialize message container for this view
 
-    // Assign global element references after rendering
-    const journalEntryForm = document.getElementById('journal-entry-form'); // This is still local but used once
-    journalEntryTitleInput = document.getElementById('journal-entry-title');   // Assign to global variable
-    journalEntryContentInput = document.getElementById('journal-entry-content'); // Assign to global variable
-
-    // Set default journal entry title
-    journalEntryTitleInput.value = getDefaultJournalTitle();
-
-    // Attach event listeners
+    // Attach global event listeners
     document.getElementById('logout-button').addEventListener('click', () => {
         auth.logoutUser();
         renderLoginForm(container); // Go back to login screen
@@ -281,33 +262,155 @@ export function renderMainJournalApp(container, username) {
         }
     });
 
-    journalEntryForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const title = journalEntryTitleInput.value;
-        const content = journalEntryContentInput.value;
-        await window.WebXJournal.saveJournalEntry(currentEditingEntryId, title, content);
-        currentEditingEntryId = null; // Clear editing state after save
-        document.getElementById('save-entry-button').textContent = 'Save Entry';
-        // Re-set default title after saving a new entry
-        journalEntryTitleInput.value = getDefaultJournalTitle();
-        journalEntryContentInput.value = ''; // Clear content too for new entry
-    });
-
-    document.getElementById('clear-form-button').addEventListener('click', () => {
-        journalEntryForm.reset();
-        currentEditingEntryId = null;
-        document.getElementById('save-entry-button').textContent = 'Save Entry';
-        // Set default title on clear
-        journalEntryTitleInput.value = getDefaultJournalTitle();
-        journalEntryContentInput.value = '';
-        utils.displayMessage('Form cleared.', 'text-blue-300 bg-gray-700');
-    });
-
     // Start session timer when main app is rendered
     startSessionTimer();
 
-    // Load existing entries after rendering the main app
-    window.WebXJournal.loadJournalEntries();
+    // Initialize the view to the journal entries list
+    renderJournalView('list');
+}
+
+/**
+ * Orchestrates rendering different views within the main journal display area.
+ * @param {'list'|'form'|'full-entry'} viewType The type of view to render.
+ * @param {object} [data] Optional data for 'full-entry' view.
+ */
+function renderJournalView(viewType, data = null) {
+    const displayArea = document.getElementById('journal-display-area');
+    if (!displayArea) {
+        console.error('Journal display area not found.');
+        return;
+    }
+
+    displayArea.innerHTML = ''; // Clear current content
+    currentView = viewType; // Update global view state
+
+    if (viewType === 'list') {
+        displayArea.innerHTML = `
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Your Entries</h2>
+                <button id="new-entry-button" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm">
+                    + New Journal Entry
+                </button>
+            </div>
+            <div id="journal-entries-list" class="space-y-4">
+                </div>
+        `;
+        document.getElementById('new-entry-button').addEventListener('click', () => {
+            renderJournalView('form');
+        });
+        window.WebXJournal.loadJournalEntries(); // Load entries when list view is active
+
+    } else if (viewType === 'form') {
+        displayArea.innerHTML = `
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold" id="form-title">New Journal Entry</h2>
+                <button id="back-to-list-button-form" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm">
+                    ← Back to All Entries
+                </button>
+            </div>
+            <form id="journal-entry-form" class="space-y-4">
+                <div>
+                    <label for="journal-entry-title" class="block text-sm font-medium text-gray-300">Title</label>
+                    <input type="text" id="journal-entry-title" required
+                            class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
+                </div>
+                <div>
+                    <label for="journal-entry-content" class="block text-sm font-medium text-gray-300">Content</label>
+                    <textarea id="journal-entry-content" rows="10" required
+                                class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100"></textarea>
+                </div>
+                <div class="flex space-x-2">
+                    <button type="submit" id="save-entry-button"
+                                class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Save Entry
+                    </button>
+                    <button type="button" id="clear-form-button"
+                                class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-gray-800 bg-gray-300 hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                        Clear Form
+                    </button>
+                </div>
+            </form>
+        `;
+        // Assign global element references after form is rendered
+        journalEntryTitleInput = document.getElementById('journal-entry-title');
+        journalEntryContentInput = document.getElementById('journal-entry-content');
+
+        // Set default title for new entries
+        if (!currentEditingEntryId) { // Only set default if it's a new entry, not an edit
+            journalEntryTitleInput.value = getDefaultJournalTitle();
+            document.getElementById('form-title').textContent = 'New Journal Entry';
+            document.getElementById('save-entry-button').textContent = 'Save Entry';
+        }
+
+
+        // Attach form event listeners
+        document.getElementById('journal-entry-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const title = journalEntryTitleInput.value;
+            const content = journalEntryContentInput.value;
+            await window.WebXJournal.saveJournalEntry(currentEditingEntryId, title, content);
+            currentEditingEntryId = null; // Clear editing state after save
+            // After saving, go back to the list view
+            renderJournalView('list');
+            journalEntryTitleInput.value = ''; // Clear for next form load
+            journalEntryContentInput.value = ''; // Clear for next form load
+        });
+
+        document.getElementById('clear-form-button').addEventListener('click', () => {
+            document.getElementById('journal-entry-form').reset();
+            currentEditingEntryId = null;
+            journalEntryTitleInput.value = getDefaultJournalTitle(); // Reset default title
+            journalEntryContentInput.value = '';
+            document.getElementById('save-entry-button').textContent = 'Save Entry';
+            document.getElementById('form-title').textContent = 'New Journal Entry';
+            utils.displayMessage('Form cleared.', 'text-blue-300 bg-gray-700');
+        });
+
+        document.getElementById('back-to-list-button-form').addEventListener('click', () => {
+            renderJournalView('list');
+        });
+
+    } else if (viewType === 'full-entry' && data) {
+        const entry = data;
+        const date = new Date(entry.timestamp);
+        const formattedDate = date.toLocaleString();
+
+        displayArea.innerHTML = `
+            <div class="full-entry-view bg-gray-800 p-6 rounded-lg shadow-xl border-l-4 border-indigo-600">
+                <button id="back-to-list-button-full" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm mb-4">
+                    ← Back to All Entries
+                </button>
+                <h3 class="text-3xl font-bold mb-4 text-indigo-300">${utils.escapeHTML(entry.title)}</h3>
+                <p class="text-md text-gray-400 mb-6 border-b border-gray-700 pb-3">${formattedDate}</p>
+                <div class="prose prose-invert text-gray-200 leading-relaxed mb-8 whitespace-pre-wrap">
+                    <p>${utils.escapeHTML(entry.content)}</p>
+                </div>
+                <div class="flex space-x-2">
+                    <button class="edit-entry-button-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm" data-id="${entry.id}">Edit This Entry</button>
+                    <button class="delete-entry-button-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm" data-id="${entry.id}">Delete This Entry</button>
+                </div>
+            </div>
+        `;
+        document.getElementById('back-to-list-button-full').addEventListener('click', () => {
+            renderJournalView('list');
+        });
+
+        document.querySelector('.edit-entry-button-full').addEventListener('click', () => {
+            renderJournalView('form'); // Switch to form view
+            // Populate form after rendering it
+            currentEditingEntryId = entry.id;
+            document.getElementById('form-title').textContent = `Editing: ${utils.escapeHTML(entry.title)}`;
+            journalEntryTitleInput.value = entry.title;
+            journalEntryContentInput.value = entry.content;
+            document.getElementById('save-entry-button').textContent = 'Update Entry';
+            journalEntryTitleInput.focus();
+            utils.displayMessage(`Editing entry: "${entry.title}"`, 'text-blue-300 bg-gray-700');
+        });
+
+        document.querySelector('.delete-entry-button-full').addEventListener('click', () => {
+            showConfirmDeleteModal(entry.id, entry.title);
+        });
+    }
 }
 
 /**
@@ -344,11 +447,15 @@ function startSessionTimer() {
             if (timeLeft <= 60 && !warningShown) {
                 showWarningPopup();
             }
+            const countdownElement = document.getElementById('warning-countdown');
+            if (countdownElement) {
+                countdownElement.textContent = `${timeLeft} seconds`;
+            }
         } else {
             clearInterval(sessionTimerInterval);
             if (auth.getAuthStatus().isLoggedIn) { // Only logout if still logged in
                 auth.logoutUser();
-                renderLoginForm(document.getElementById('app-content-container'));
+                renderLoginForm(document.getElementById('app-content-container')); // Assuming this is the main app container
                 utils.displayMessage('Session timed out. Please log in again.', 'text-red-400 bg-red-800');
             }
             hideWarningPopup(); // Hide warning when session ends
@@ -364,8 +471,12 @@ function startSessionTimer() {
     document.addEventListener('click', resetSessionTimeout);
     document.addEventListener('scroll', resetSessionTimeout);
 
-    // Event listener for dismissing the warning
-    document.getElementById('dismiss-warning').addEventListener('click', hideWarningPopup);
+    // Event listener for dismissing the warning, ensure it's attached only once
+    const dismissButton = document.getElementById('dismiss-warning');
+    if (dismissButton && !dismissButton.dataset.listenerAttached) {
+        dismissButton.addEventListener('click', hideWarningPopup);
+        dismissButton.dataset.listenerAttached = 'true';
+    }
 }
 
 /**
@@ -385,7 +496,7 @@ function resetSessionTimeout() {
     }, (SESSION_DURATION_SECONDS + 5) * 1000); // Give a small buffer (5 seconds) after display runs out
 
     // Also reset the display timer if activity happens before session ends
-    if (timeLeft < SESSION_DURATION_SECONDS) { // Only reset if not already at full time
+    if (timeLeft < SESSION_DURATION_SECONDS || timeLeft <= 0) { // If still active or already timed out, reset
         timeLeft = SESSION_DURATION_SECONDS;
         warningShown = false; // Reset warning flag if user becomes active again
         hideWarningPopup();
@@ -408,14 +519,6 @@ function showWarningPopup() {
     if (countdownElement) {
         countdownElement.textContent = `${timeLeft} seconds`;
     }
-    // Update countdown in popup
-    const popupCountdownInterval = setInterval(() => {
-        if (timeLeft > 0 && warningPopup.classList.contains('hidden') === false) {
-            countdownElement.textContent = `${timeLeft} seconds`;
-        } else {
-            clearInterval(popupCountdownInterval);
-        }
-    }, 1000);
 }
 
 /**
@@ -445,6 +548,42 @@ function stopSessionTimer() {
     document.removeEventListener('scroll', resetSessionTimeout);
 }
 
+/**
+ * Shows the custom delete confirmation modal.
+ * @param {string} entryId The ID of the entry to be deleted.
+ * @param {string} entryTitle The title of the entry to be displayed in the modal.
+ */
+function showConfirmDeleteModal(entryId, entryTitle) {
+    const titlePlaceholder = document.getElementById('delete-entry-title-placeholder');
+    if (titlePlaceholder) {
+        titlePlaceholder.textContent = utils.escapeHTML(entryTitle);
+    }
+    deleteConfirmationModal.classList.remove('hidden');
+
+    const confirmYesBtn = document.getElementById('confirm-delete-yes');
+    const confirmNoBtn = document.getElementById('confirm-delete-no');
+
+    // Remove old listeners to prevent multiple calls
+    confirmYesBtn.replaceWith(confirmYesBtn.cloneNode(true));
+    confirmNoBtn.replaceWith(confirmNoBtn.cloneNode(true));
+
+    const newConfirmYesBtn = document.getElementById('confirm-delete-yes');
+    const newConfirmNoBtn = document.getElementById('confirm-delete-no');
+
+    newConfirmYesBtn.addEventListener('click', async () => {
+        await window.WebXJournal.deleteJournalEntry(entryId);
+        deleteConfirmationModal.classList.add('hidden');
+        if (currentView === 'full-entry') {
+            renderJournalView('list'); // Go back to list after deleting from full view
+        }
+        // If in list view, the removeJournalEntryFromList call will handle it
+    });
+
+    newConfirmNoBtn.addEventListener('click', () => {
+        deleteConfirmationModal.classList.add('hidden');
+    });
+}
+
 
 /**
  * Renders a single journal entry into the list.
@@ -464,44 +603,45 @@ export function renderJournalEntry(entry) {
 
     const entryElement = document.createElement('div');
     entryElement.id = `entry-${entry.id}`;
-    entryElement.className = `journal-entry-item bg-gray-800 p-4 rounded-lg shadow-md transition-all duration-200 ease-in-out ${entry.isCorrupted ? 'border-l-4 border-red-500' : 'border-l-4 border-indigo-500'}`;
+    // Added 'h-36' for uniform height and fixed line-clamp for content preview
+    entryElement.className = `journal-entry-item bg-gray-800 p-4 rounded-lg shadow-md transition-all duration-200 ease-in-out ${entry.isCorrupted ? 'border-l-4 border-red-500' : 'border-l-4 border-indigo-500'} flex flex-col justify-between h-40`;
 
     const date = new Date(entry.timestamp);
     const formattedDate = date.toLocaleString(); // Adjust as needed for specific format
 
     entryElement.innerHTML = `
-        <h3 class="text-xl font-semibold mb-2 text-indigo-300">${utils.escapeHTML(entry.title)}</h3>
-        <p class="text-sm text-gray-400 mb-3">${formattedDate}</p>
-        <div class="journal-content-preview text-gray-300 mb-4 overflow-hidden max-h-24 leading-relaxed">${utils.escapeHTML(entry.content)}</div>
-        ${entry.isCorrupted ? '<p class="text-red-400 font-bold">This entry could not be decrypted.</p>' : ''}
-        <div class="flex space-x-2">
-            <button class="view-entry-button bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-md text-sm" data-id="${entry.id}">View Full</button>
-            <button class="edit-entry-button bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded-md text-sm" data-id="${entry.id}">Edit</button>
-            <button class="delete-entry-button bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm" data-id="${entry.id}">Delete</button>
+        <div>
+            <h3 class="text-xl font-semibold mb-1 text-indigo-300">${utils.escapeHTML(entry.title)}</h3>
+            <p class="text-xs text-gray-400 mb-2">${formattedDate}</p>
+            <div class="journal-content-preview text-gray-300 text-sm overflow-hidden line-clamp-3 leading-relaxed mb-3">
+                ${utils.escapeHTML(entry.content)}
+            </div>
+        </div>
+        <div class="flex space-x-2 mt-auto"> <button class="view-entry-button bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-md text-xs" data-id="${entry.id}">View Full</button>
+            <button class="edit-entry-button bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded-md text-xs" data-id="${entry.id}">Edit</button>
+            <button class="delete-entry-button bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-xs" data-id="${entry.id}">Delete</button>
         </div>
     `;
 
     // Add event listeners for buttons
     entryElement.querySelector('.view-entry-button').addEventListener('click', () => {
-        renderFullEntryView(entry); // Call new function for full view
+        renderJournalView('full-entry', entry); // Call new function for full view
     });
 
     entryElement.querySelector('.edit-entry-button').addEventListener('click', () => {
-        // Populate the form for editing
-        // These now refer to the globally declared variables
+        renderJournalView('form'); // Switch to form view
+        // Populate form after rendering it
+        currentEditingEntryId = entry.id;
+        document.getElementById('form-title').textContent = `Editing: ${utils.escapeHTML(entry.title)}`;
         journalEntryTitleInput.value = entry.title;
         journalEntryContentInput.value = entry.content;
-        currentEditingEntryId = entry.id; // Set the ID of the entry being edited
         document.getElementById('save-entry-button').textContent = 'Update Entry';
         journalEntryTitleInput.focus();
         utils.displayMessage(`Editing entry: "${entry.title}"`, 'text-blue-300 bg-gray-700');
     });
 
-    entryElement.querySelector('.delete-entry-button').addEventListener('click', async () => {
-        if (confirm(`Are you sure you want to delete "${entry.title}"?`)) {
-            // IMPORTANT: This call now correctly uses window.WebXJournal
-            await window.WebXJournal.deleteJournalEntry(entry.id);
-        }
+    entryElement.querySelector('.delete-entry-button').addEventListener('click', () => {
+        showConfirmDeleteModal(entry.id, entry.title);
     });
 
     // Insert new entries at the top of the list
@@ -509,65 +649,11 @@ export function renderJournalEntry(entry) {
 }
 
 /**
- * Renders the full view of a single journal entry in place of the list.
- * @param {object} entry The journal entry object to display.
- */
-function renderFullEntryView(entry) {
-    const journalListContainer = document.getElementById('journal-entries-list');
-    if (!journalListContainer) {
-        console.error('Journal entries list container not found for full view.');
-        return;
-    }
-
-    const date = new Date(entry.timestamp);
-    const formattedDate = date.toLocaleString();
-
-    journalListContainer.innerHTML = `
-        <div class="full-entry-view bg-gray-800 p-6 rounded-lg shadow-xl border-l-4 border-indigo-600">
-            <button id="back-to-list-button" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm mb-4">
-                ← Back to All Entries
-            </button>
-            <h3 class="text-3xl font-bold mb-4 text-indigo-300">${utils.escapeHTML(entry.title)}</h3>
-            <p class="text-md text-gray-400 mb-6 border-b border-gray-700 pb-3">${formattedDate}</p>
-            <div class="prose prose-invert text-gray-200 leading-relaxed mb-8">
-                <p>${utils.escapeHTML(entry.content).replace(/\n/g, '<br>')}</p>
-            </div>
-            <div class="flex space-x-2">
-                <button class="edit-entry-button-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm" data-id="${entry.id}">Edit This Entry</button>
-                <button class="delete-entry-button-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm" data-id="${entry.id}">Delete This Entry</button>
-            </div>
-        </div>
-    `;
-
-    document.getElementById('back-to-list-button').addEventListener('click', () => {
-        window.WebXJournal.loadJournalEntries(); // Re-load all entries to show the list again
-    });
-
-    // Attach edit/delete listeners for the full view as well
-    document.querySelector('.edit-entry-button-full').addEventListener('click', () => {
-        // Populate the form for editing
-        journalEntryTitleInput.value = entry.title;
-        journalEntryContentInput.value = entry.content;
-        currentEditingEntryId = entry.id; // Set the ID of the entry being edited
-        document.getElementById('save-entry-button').textContent = 'Update Entry';
-        journalEntryTitleInput.focus();
-        utils.displayMessage(`Editing entry: "${entry.title}"`, 'text-blue-300 bg-gray-700');
-        // Scroll to top of the page or entry form if necessary
-        document.getElementById('journal-entry-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-
-    document.querySelector('.delete-entry-button-full').addEventListener('click', async () => {
-        if (confirm(`Are you sure you want to delete "${entry.title}"?`)) {
-            await window.WebXJournal.deleteJournalEntry(entry.id);
-            // After deletion, go back to the list view
-            window.WebXJournal.loadJournalEntries();
-        }
-    });
-}
-
-
-/**
  * Updates an existing journal entry's display in the list.
+ * Note: With the new `renderJournalView` and `loadJournalEntries` flow,
+ * this function might be less critical if `loadJournalEntries` is always called
+ * after saves/updates, completely refreshing the list. However, keeping it for
+ * explicit single-entry updates if needed.
  * @param {object} updatedEntry The updated journal entry object.
  * @param {string} updatedEntry.id
  * @param {number} updatedEntry.timestamp
@@ -575,6 +661,11 @@ function renderFullEntryView(entry) {
  * @param {string} updatedEntry.content
  */
 export function updateJournalEntryInList(updatedEntry) {
+    // If we're not in the list view, don't try to update the list elements
+    if (currentView !== 'list') {
+        return;
+    }
+
     const existingElement = document.getElementById(`entry-${updatedEntry.id}`);
     if (existingElement) {
         // Remove the old element
@@ -594,3 +685,17 @@ export function removeJournalEntryFromList(id) {
         entryElement.remove();
     }
 }
+
+// Add a simple line-clamp utility if not provided by Tailwind or another CSS framework.
+// For demonstration, direct CSS is applied. If you have TailwindCSS, you can enable
+// the @tailwindcss/line-clamp plugin and use 'line-clamp-3' directly in your CSS.
+// For this code, I've added a basic CSS class that mimics line-clamp.
+// You might need to add this to your main CSS file:
+/*
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+*/
