@@ -1,189 +1,149 @@
 // src/crypto.js
 
 /**
- * @fileoverview Provides cryptographic utilities for WebX Journal,
- * including Argon2 key derivation and AES-256 GCM encryption/decryption.
- * All operations use the Web Crypto API for secure and efficient cryptography.
+ * @fileoverview Handles all cryptographic operations for WebX Journal.
+ * This includes key derivation (KDF), encryption, and decryption using Web Crypto API.
  */
 
-// --- Argon2 Key Derivation Parameters ---
-// These parameters are optimized for security and browser performance.
-// They are chosen to make brute-force attacks computationally expensive.
-const ARGON2_PARAMS = {
-    memory: 64 * 1024, // 64 MB (in KiB, so 65536)
-    iterations: 3,     // Number of iterations
-    parallelism: 1,    // Degree of parallelism
-    hashLen: 32,       // Desired key length in bytes (for AES-256)
-    type: 2            // Argon2id (most secure, protects against side-channel attacks)
+// Encryption algorithm and parameters
+const ALGORITHM_AES_GCM = {
+    name: 'AES-GCM',
+    ivLength: 12 // 96-bit IV as recommended for AES-GCM
 };
 
-// --- AES-GCM Encryption Parameters ---
-const AES_GCM_ALG = 'AES-GCM';
-const AES_KEY_LENGTH = 256; // Bits
+// Key Derivation Function (KDF) algorithm and parameters
+const ALGORITHM_PBKDF2 = {
+    name: 'PBKDF2',
+    hash: 'SHA-256',
+    iterations: 200000 // A high number of iterations for stronger security
+};
 
-// --- Helper Functions ---
-
-/**
- * Converts a string to a Uint8Array.
- * @param {string} str The string to convert.
- * @returns {Uint8Array} The UTF-8 encoded Uint8Array.
- */
-function strToUint8(str) {
-    return new TextEncoder().encode(str);
-}
+// Key export format
+const KEY_FORMAT = 'raw';
 
 /**
- * Converts a Uint8Array to a base64 string.
- * @param {Uint8Array} bytes The Uint8Array to convert.
- * @returns {string} The base64 encoded string.
- */
-function uint8ToBase64(bytes) {
-    return btoa(String.fromCharCode(...bytes));
-}
-
-/**
- * Converts a base64 string to a Uint8Array.
- * @param {string} base64 The base64 string to convert.
- * @returns {Uint8Array} The decoded Uint8Array.
- */
-function base64ToUint8(base64) {
-    return new Uint8Array(atob(base64).split('').map(char => char.charCodeAt(0)));
-}
-
-// --- Key Derivation (Argon2) ---
-
-/**
- * Generates a cryptographically secure random salt for Argon2 key derivation.
- * The salt is essential to prevent rainbow table attacks.
- * @returns {Uint8Array} A 16-byte (128-bit) random salt.
+ * Generates a cryptographically secure random salt for key derivation.
+ * @returns {Uint8Array} A 16-byte (128-bit) salt.
  */
 export function generateSalt() {
     return window.crypto.getRandomValues(new Uint8Array(16)); // 16 bytes for salt
 }
 
 /**
- * Derives an encryption key from a password and salt using Argon2id.
- * This operation is computationally intensive by design to resist brute-force attacks.
+ * Generates a cryptographically secure random Initialization Vector (IV) for AES-GCM.
+ * @returns {Uint8Array} A 12-byte (96-bit) IV.
+ */
+function generateIv() {
+    return window.crypto.getRandomValues(new Uint8Array(ALGORITHM_AES_GCM.ivLength));
+}
+
+/**
+ * Derives an encryption key from a master password using PBKDF2.
+ * The derived key is suitable for AES-GCM encryption.
  * @param {string} password The user's master password.
- * @param {Uint8Array} salt The salt for key derivation.
+ * @param {Uint8Array} salt A unique salt for key derivation.
  * @returns {Promise<CryptoKey>} A Promise that resolves with the derived CryptoKey.
  */
 export async function deriveKeyFromPassword(password, salt) {
-    try {
-        // Import argon2 library (will need to be added to index.html or handled via bundler)
-        // For simplicity and quick setup, we'll assume a direct import or global availability
-        // For production, consider a bundled argon2 WASM module like 'wasm-argon2'.
-        // For now, we'll use a placeholder for Web Crypto API based KDF for illustrative purposes.
-        // A true Argon2 implementation requires a WASM module.
-        // For this example, we'll use PBKDF2 as a stand-in which is natively available in Web Crypto.
-        // In a real application, replace this with a proper Argon2 WASM implementation for stronger security.
-        console.warn("Using PBKDF2 for key derivation. For production, strongly consider a WebAssembly-based Argon2 implementation (e.g., wasm-argon2) for enhanced security against brute-force attacks as specified in the README.");
+    // Encode password as UTF-8 Uint8Array
+    const passwordBytes = new TextEncoder().encode(password);
 
-        // Fallback to PBKDF2 for demonstration and ease of initial setup
-        const passwordBuffer = strToUint8(password);
-        const saltBuffer = salt; // Salt is already Uint8Array
+    // Import the password as an unextractable raw key
+    const baseKey = await window.crypto.subtle.importKey(
+        KEY_FORMAT,
+        passwordBytes,
+        { name: ALGORITHM_PBKDF2.name },
+        false, // Not extractable
+        ['deriveBits', 'deriveKey']
+    );
 
-        const keyMaterial = await window.crypto.subtle.importKey(
-            'raw',
-            passwordBuffer,
-            { name: 'PBKDF2' }, // Placeholder for Argon2
-            false, // not exportable
-            ['deriveKey']
-        );
+    // Derive the actual encryption key using PBKDF2
+    const derivedKey = await window.crypto.subtle.deriveKey(
+        {
+            name: ALGORITHM_PBKDF2.name,
+            salt: salt,
+            iterations: ALGORITHM_PBKDF2.iterations,
+            hash: ALGORITHM_PBKDF2.hash,
+        },
+        baseKey,
+        { name: ALGORITHM_AES_GCM.name, length: 256 }, // AES-256 GCM key
+        false, // Not extractable
+        ['encrypt', 'decrypt']
+    );
 
-        const derivedKey = await window.crypto.subtle.deriveKey(
-            {
-                name: 'PBKDF2', // Placeholder for Argon2
-                salt: saltBuffer,
-                iterations: 100000, // High iterations for PBKDF2
-                hash: 'SHA-256'
-            },
-            keyMaterial,
-            { name: AES_GCM_ALG, length: AES_KEY_LENGTH },
-            false, // not exportable
-            ['encrypt', 'decrypt']
-        );
-
-        return derivedKey;
-
-    } catch (error) {
-        console.error('Error deriving key from password:', error);
-        throw new Error('Failed to derive encryption key. Check password strength or parameters.');
-    }
+    return derivedKey;
 }
 
-// --- Encryption and Decryption (AES-256 GCM) ---
-
 /**
- * Encrypts data using AES-256 GCM with a derived CryptoKey.
- * Each encryption generates a unique Initialization Vector (IV).
- * @param {string} data The plain text string data to encrypt.
- * @param {CryptoKey} key The CryptoKey derived from the master password.
- * @returns {Promise<{iv: string, ciphertext: string, authTag: string}>} A Promise resolving to an object
- * containing the base64-encoded IV, ciphertext, and authentication tag.
+ * Encrypts plaintext data using AES-GCM.
+ * @param {string} plaintext The data to encrypt.
+ * @param {CryptoKey} key The encryption key (derived from password).
+ * @returns {Promise<{ iv: string, ciphertext: string, authTag: string }>}
+ * A Promise that resolves with the IV, ciphertext, and authentication tag, all Base64 encoded.
  */
-export async function encrypt(data, key) {
-    try {
-        const iv = window.crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV recommended for AES-GCM
-        const encodedData = strToUint8(data);
+export async function encrypt(plaintext, key) {
+    const iv = generateIv(); // Generate a new IV for each encryption
 
-        const cipher = await window.crypto.subtle.encrypt(
-            { name: AES_GCM_ALG, iv: iv },
-            key,
-            encodedData
-        );
+    // Encode plaintext as Uint8Array
+    const encoded = new TextEncoder().encode(plaintext);
 
-        // The result of AES-GCM encryption is a single ArrayBuffer containing:
-        // [ciphertext...][authentication_tag...]
-        // The authentication tag is the last 16 bytes (128 bits) of the result.
-        const ciphertextWithTag = new Uint8Array(cipher);
-        const authTag = ciphertextWithTag.slice(ciphertextWithTag.length - 16);
-        const ciphertext = ciphertextWithTag.slice(0, ciphertextWithTag.length - 16);
+    const algorithm = {
+        name: ALGORITHM_AES_GCM.name,
+        iv: iv,
+    };
 
-        return {
-            iv: uint8ToBase64(iv),
-            ciphertext: uint8ToBase64(ciphertext),
-            authTag: uint8ToBase64(authTag)
-        };
-    } catch (error) {
-        console.error('Encryption failed:', error);
-        throw new Error('Failed to encrypt data.');
-    }
+    const ciphertextWithAuthTag = await window.crypto.subtle.encrypt(
+        algorithm,
+        key,
+        encoded
+    );
+
+    // The result `ciphertextWithAuthTag` is an ArrayBuffer containing
+    // the actual ciphertext followed by the 16-byte authentication tag.
+    // We need to separate them.
+    const tagLength = 16; // AES-GCM produces a 16-byte (128-bit) authentication tag
+    const ciphertextBuffer = ciphertextWithAuthTag.slice(0, ciphertextWithAuthTag.byteLength - tagLength);
+    const authTagBuffer = ciphertextWithAuthTag.slice(ciphertextWithAuthTag.byteLength - tagLength);
+
+    // Convert ArrayBuffers to Base64 strings for storage
+    return {
+        iv: btoa(String.fromCharCode(...new Uint8Array(iv))),
+        ciphertext: btoa(String.fromCharCode(...new Uint8Array(ciphertextBuffer))),
+        authTag: btoa(String.fromCharCode(...new Uint8Array(authTagBuffer)))
+    };
 }
 
 /**
- * Decrypts data using AES-256 GCM with a derived CryptoKey.
- * Requires the IV and authentication tag used during encryption.
- * @param {string} ciphertextBase64 The base64-encoded ciphertext.
- * @param {string} ivBase64 The base64-encoded Initialization Vector.
- * @param {string} authTagBase64 The base64-encoded authentication tag.
- * @param {CryptoKey} key The CryptoKey derived from the master password.
- * @returns {Promise<string>} A Promise resolving to the decrypted plain text string.
+ * Decrypts data using AES-GCM.
+ * @param {string} ciphertextBase64 The Base64-encoded ciphertext.
+ * @param {string} ivBase64 The Base64-encoded Initialization Vector (IV).
+ * @param {string} authTagBase64 The Base64-encoded authentication tag.
+ * @param {CryptoKey} key The decryption key.
+ * @returns {Promise<string>} A Promise that resolves with the decrypted plaintext.
+ * @throws {DOMException} If decryption fails (e.g., incorrect key, corrupted data).
  */
 export async function decrypt(ciphertextBase64, ivBase64, authTagBase64, key) {
-    try {
-        const iv = base64ToUint8(ivBase64);
-        const ciphertext = base64ToUint8(ciphertextBase64);
-        const authTag = base64ToUint8(authTagBase64);
+    // Decode Base64 strings back to ArrayBuffers
+    const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
+    const ciphertext = Uint8Array.from(atob(ciphertextBase64), c => c.charCodeAt(0));
+    const authTag = Uint8Array.from(atob(authTagBase64), c => c.charCodeAt(0));
 
-        // Concatenate ciphertext and auth tag for decryption
-        const encryptedDataWithTag = new Uint8Array(ciphertext.length + authTag.length);
-        encryptedDataWithTag.set(ciphertext, 0);
-        encryptedDataWithTag.set(authTag, ciphertext.length);
+    // Combine ciphertext and authTag back into a single ArrayBuffer for decryption
+    const combinedCiphertext = new Uint8Array(ciphertext.byteLength + authTag.byteLength);
+    combinedCiphertext.set(ciphertext, 0);
+    combinedCiphertext.set(authTag, ciphertext.byteLength);
 
-        const decrypted = await window.crypto.subtle.decrypt(
-            { name: AES_GCM_ALG, iv: iv },
-            key,
-            encryptedDataWithTag
-        );
+    const algorithm = {
+        name: ALGORITHM_AES_GCM.name,
+        iv: iv,
+    };
 
-        return new TextDecoder().decode(decrypted);
-    } catch (error) {
-        console.error('Decryption failed:', error);
-        // Specifically catch and rethrow for incorrect master password or corrupt data
-        if (error.name === 'OperationError' || error.message.includes('tag')) {
-            throw new Error('Decryption failed: Incorrect master password or corrupt data.');
-        }
-        throw new Error('Failed to decrypt data.');
-    }
+    const decrypted = await window.crypto.subtle.decrypt(
+        algorithm,
+        key,
+        combinedCiphertext
+    );
+
+    // Decode decrypted ArrayBuffer back to string
+    return new TextDecoder().decode(decrypted);
 }
