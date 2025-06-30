@@ -1,157 +1,267 @@
 // src/auth.js
 
-import * as db from './storage.js'; // Import storage module to interact with IndexedDB
-import * as crypto from './crypto.js'; // Import crypto module for hashing passwords and encryption
-import * as utils from './utils.js'; // Import utils for message display
+/**
+ * @fileoverview Handles user authentication (registration, login, logout)
+ * and secure key management for WebX Journal.
+ */
 
-// Helper to get the current logged-in username from sessionStorage
+import * as storage from './storage.js'; // This line needs to be correctly parsed and executed
+import * as crypto from './crypto.js';
+import * as utils from './utils.js';
+import * as ui from './ui.js';
+
+// Current user's authentication state and encryption key
+let currentAuth = {
+    username: null,
+    encryptionKey: null, // CryptoKey object
+    kdfSalt: null, // Uint8Array
+    encryptedIdentity: null, // {ciphertext, iv, authTag}
+};
+
+// Data version for user profile encryption
+export const CURRENT_DATA_VERSION = 1;
+
+/**
+ * Helper to get the full currentAuth object. Used internally for deletion/export.
+ * @returns {object} The current authentication object.
+ */
+export function getCurrentAuth() {
+    return currentAuth;
+}
+
+/**
+ * Retrieves the current authentication status.
+ * @returns {Promise<{isLoggedIn: boolean, isRegistered: boolean, username: string|null}>}
+ */
+export async function getAuthStatus() {
+    // The error occurs here if 'storage' is not defined
+    const allProfileKeys = await storage.getAllProfileKeys();
+    const isRegistered = allProfileKeys.length > 0;
+    const username = currentAuth.username; // Get from current session
+
+    return {
+        isLoggedIn: !!currentAuth.username && !!currentAuth.encryptionKey,
+        isRegistered: isRegistered,
+        username: username
+    };
+}
+
+/**
+ * Returns the current user's username.
+ * @returns {string|null}
+ */
 export function getCurrentUsername() {
-    return sessionStorage.getItem('webx_journal_username');
+    return currentAuth.username;
 }
 
-// Function to check if a user is currently authenticated
-export async function checkAuthStatus() {
-    const username = getCurrentUsername();
-    // In a real app, you might also check for a valid session token here.
-    // For now, we'll consider the user logged in if their username is in sessionStorage.
-    return !!username; // Returns true if username exists, false otherwise
+/**
+ * Returns the current user's encryption key.
+ * @returns {CryptoKey|null}
+ */
+export function getCurrentEncryptionKey() {
+    return currentAuth.encryptionKey;
 }
 
-// Function to register a new user
+
+/**
+ * Registers a new user.
+ * @param {string} username The desired username.
+ * @param {string} masterPassword The master password for encryption.
+ * @returns {Promise<boolean>} True if registration is successful, false otherwise.
+ */
 export async function registerUser(username, masterPassword) {
     if (!username || !masterPassword) {
-        throw new Error('Username and password are required.');
+        utils.displayMessage('Username and master password are required.', 'text-red-400 bg-red-800');
+        return false;
+    }
+    if (masterPassword.length < 8) {
+        utils.displayMessage('Master password must be at least 8 characters long.', 'text-red-400 bg-red-800');
+        return false;
     }
 
-    // Hash the master password using a secure, slow hashing algorithm (e.g., PBKDF2)
-    // The salt should ideally be unique per user and stored alongside the hashed password.
-    // For simplicity, we'll derive a consistent salt from the username for now,
-    // but a random, stored salt is more secure.
-    const salt = utils.stringToUint8Array(username); // Using username as salt for consistency
-    const hashedPassword = await crypto.deriveKey(masterPassword, salt, 'hash');
+    // Check if username already exists
+    const existingProfile = await storage.getUserProfile(username);
+    if (existingProfile) {
+        utils.displayMessage('Username already exists. Please choose a different one or log in.', 'text-red-400 bg-red-800');
+        return false;
+    }
 
     try {
-        // Attempt to save the new user profile
+        ui.showLoadingOverlay('Registering user...');
+        const kdfSalt = crypto.generateSalt(); // Generate salt for KDF
+        const encryptionKey = await crypto.deriveKeyFromPassword(masterPassword, kdfSalt);
+
+        // Encrypt a simple identity payload (e.g., username) with the derived key
+        // This is used for integrity checking during login and ensuring the key is correct.
+        const identityPayload = {
+            username: username,
+            timestamp: Date.now(),
+            version: CURRENT_DATA_VERSION // Version of the identity payload data structure
+        };
+        const encryptedIdentity = await crypto.encrypt(JSON.stringify(identityPayload), encryptionKey);
+
         const userProfile = {
             username: username,
-            hashedPassword: utils.uint8ArrayToBase64(hashedPassword), // Store hash as base64 string
-            // In a real app, also store the salt used for hashing
+            kdfSalt: Array.from(kdfSalt), // Store as array for IndexedDB compatibility
+            encryptedIdentity: encryptedIdentity, // Store Base64 strings
+            version: CURRENT_DATA_VERSION // Version of the user profile object itself
         };
-        
-        // Check if user already exists
-        const existingProfile = await db.getUserProfile(username);
-        if (existingProfile) {
-            throw new Error('User already exists.');
-        }
 
-        await db.saveUserProfile(userProfile);
-        utils.displayMessage('Registration successful! Please log in.', 'text-green-300 bg-green-800');
+        await storage.saveUserProfile(userProfile);
+
+        // Set current authentication state
+        currentAuth.username = username;
+        currentAuth.encryptionKey = encryptionKey;
+        currentAuth.kdfSalt = kdfSalt;
+        currentAuth.encryptedIdentity = encryptedIdentity;
+
+        utils.displayMessage('Registration successful! Logging you in...', 'text-green-400 bg-green-800');
+
+        // Render main journal app after successful registration and login
+        ui.renderMainJournalApp(document.getElementById('app-content-container'), username);
+
         return true;
     } catch (error) {
-        console.error("Registration error:", error);
-        throw new Error(`Registration failed: ${error.message}`);
+        console.error('Registration failed:', error);
+        utils.displayMessage(`Registration failed: ${error.message}. Please try again.`, 'text-red-400 bg-red-800');
+        return false;
+    } finally {
+        ui.hideLoadingOverlay();
     }
 }
 
-// Function to log in a user
+/**
+ * Logs in an existing user.
+ * @param {string} username The username.
+ * @param {string} masterPassword The master password.
+ * @returns {Promise<boolean>} True if login is successful, false otherwise.
+ */
 export async function loginUser(username, masterPassword) {
     if (!username || !masterPassword) {
-        throw new Error('Username and password are required.');
+        utils.displayMessage('Username and master password are required.', 'text-red-400 bg-red-800');
+        return false;
     }
 
     try {
-        const userProfile = await db.getUserProfile(username);
+        ui.showLoadingOverlay('Logging in...');
+        const userProfile = await storage.getUserProfile(username);
 
         if (!userProfile) {
-            throw new Error('User not found.');
+            utils.displayMessage('User not found. Please register.', 'text-red-400 bg-red-800');
+            return false;
         }
 
-        const storedHashedPassword = utils.base64ToUint8Array(userProfile.hashedPassword);
-        const salt = utils.stringToUint8Array(username); // Re-derive salt as used during registration
-        const inputHashedPassword = await crypto.deriveKey(masterPassword, salt, 'hash');
+        // Convert kdfSalt back to Uint8Array for key derivation
+        const kdfSalt = new Uint8Array(userProfile.kdfSalt);
+        const derivedKey = await crypto.deriveKeyFromPassword(masterPassword, kdfSalt);
 
-        // Compare the derived hash from input with the stored hash
-        const passwordsMatch = await crypto.compareHashes(inputHashedPassword, storedHashedPassword);
-
-        if (passwordsMatch) {
-            // Store the master key (derived from masterPassword) in memory for current session
-            const masterKey = await crypto.deriveKey(masterPassword, salt, 'encryption'); // Use same salt for key derivation
-            sessionStorage.setItem('webx_journal_master_key', utils.uint8ArrayToBase64(new Uint8Array(masterKey)));
-            sessionStorage.setItem('webx_journal_username', username);
-
-            utils.displayMessage('Login successful!', 'text-green-300 bg-green-800');
-            return true;
-        } else {
-            throw new Error('Incorrect password.');
-        }
-    } catch (error) {
-        console.error("Login error:", error);
-        throw new Error(`Login failed: ${error.message}`);
-    }
-}
-
-// Function to log out a user
-export function logoutUser() {
-    sessionStorage.removeItem('webx_journal_master_key');
-    sessionStorage.removeItem('webx_journal_username');
-    utils.displayMessage('Logged out successfully.', 'text-green-300 bg-green-800');
-    // Clear any existing UI and reload login form
-    window.location.reload(); // Simple reload to go back to login state
-}
-
-// Function to change password (requires old password to derive old key and re-encrypt data)
-export async function changePassword(username, oldPassword, newPassword) {
-    if (!oldPassword || !newPassword) {
-        throw new Error('Both old and new passwords are required.');
-    }
-    if (oldPassword === newPassword) {
-        throw new Error('New password cannot be the same as the old password.');
-    }
-
-    utils.displayMessage('Changing password...', 'text-blue-300 bg-blue-800');
-    try {
-        // 1. Verify old password
-        const userProfile = await db.getUserProfile(username);
-        if (!userProfile) {
-            throw new Error('User profile not found.');
+        // Attempt to decrypt the identity payload to verify the master password
+        let decryptedIdentity;
+        try {
+            decryptedIdentity = JSON.parse(await crypto.decrypt(
+                userProfile.encryptedIdentity.ciphertext,
+                userProfile.encryptedIdentity.iv,
+                userProfile.encryptedIdentity.authTag,
+                derivedKey
+            ));
+        } catch (decryptError) {
+            console.error('Decryption failed during login:', decryptError);
+            utils.displayMessage('Invalid username or master password.', 'text-red-400 bg-red-800');
+            return false;
         }
 
-        const storedHashedPassword = utils.base64ToUint8Array(userProfile.hashedPassword);
-        const salt = utils.stringToUint8Array(username);
-        const oldInputHashedPassword = await crypto.deriveKey(oldPassword, salt, 'hash');
-
-        const passwordsMatch = await crypto.compareHashes(oldInputHashedPassword, storedHashedPassword);
-        if (!passwordsMatch) {
-            throw new Error('Incorrect old password.');
+        // Basic sanity check: ensure decrypted username matches
+        if (decryptedIdentity.username !== username) {
+            console.error('Decrypted identity username mismatch.', decryptedIdentity, username);
+            utils.displayMessage('Login failed: Corrupted user profile.', 'text-red-400 bg-red-800');
+            return false;
         }
 
-        // 2. Derive new hashed password for storage
-        const newHashedPassword = await crypto.deriveKey(newPassword, salt, 'hash');
-        
-        // 3. Update user profile with new hashed password
-        userProfile.hashedPassword = utils.uint8ArrayToBase64(newHashedPassword);
-        await db.saveUserProfile(userProfile); // Update the profile in IndexedDB
+        // Set current authentication state
+        currentAuth.username = username;
+        currentAuth.encryptionKey = derivedKey;
+        currentAuth.kdfSalt = kdfSalt; // Store as Uint8Array for consistency
+        currentAuth.encryptedIdentity = userProfile.encryptedIdentity; // Store as is
 
-        // 4. Re-encrypt all journal entries with the new master key derived from the new password
-        const oldMasterKey = await crypto.deriveKey(oldPassword, salt, 'encryption');
-        const newMasterKey = await crypto.deriveKey(newPassword, salt, 'encryption');
-        
-        const entries = await db.getEntriesRaw(); // Get entries without decryption
-        for (const entry of entries) {
-            const decryptedContent = await crypto.decryptData(utils.base64ToUint8Array(entry.content), oldMasterKey, utils.base64ToUint8Array(entry.iv));
-            const encryptedContent = await crypto.encryptData(decryptedContent, newMasterKey);
-            entry.content = utils.uint8ArrayToBase64(encryptedContent.data);
-            entry.iv = utils.uint8ArrayToBase64(encryptedContent.iv);
-            await db.saveEntryRaw(entry); // Save updated entry
-        }
+        utils.displayMessage('Login successful!', 'text-green-400 bg-green-800');
 
-        // 5. Update master key in sessionStorage
-        sessionStorage.setItem('webx_journal_master_key', utils.uint8ArrayToBase64(new Uint8Array(newMasterKey)));
+        // Render main journal app after successful login
+        ui.renderMainJournalApp(document.getElementById('app-content-container'), username);
 
-        utils.displayMessage('Password changed successfully and entries re-encrypted!', 'text-green-300 bg-green-800');
         return true;
     } catch (error) {
-        console.error("Password change error:", error);
-        throw new Error(`Password change failed: ${error.message}`);
+        console.error('Login failed:', error);
+        utils.displayMessage(`An unexpected error occurred during login: ${error.message}`, 'text-red-400 bg-red-800');
+        return false;
+    } finally {
+        ui.hideLoadingOverlay();
+    }
+}
+
+/**
+ * Logs out the current user. Clears in-memory session data.
+ */
+export function logoutUser() {
+    currentAuth.username = null;
+    currentAuth.encryptionKey = null;
+    currentAuth.kdfSalt = null;
+    currentAuth.encryptedIdentity = null;
+    utils.displayMessage('You have been logged out.', 'text-blue-300 bg-gray-700');
+    console.log('User logged out.');
+}
+
+/**
+ * Deletes the user account and all associated data from IndexedDB.
+ * Requires re-entering the master password for confirmation.
+ * @param {string} username The username of the account to delete.
+ * @param {string} masterPassword The master password for confirmation.
+ * @returns {Promise<boolean>} True if deletion is successful, false otherwise.
+ */
+export async function deleteAccount(username, masterPassword) {
+    if (!username || !masterPassword) {
+        utils.displayMessage('Username and master password are required for deletion.', 'text-red-400 bg-red-800');
+        return false;
+    }
+
+    try {
+        ui.showLoadingOverlay('Deleting account...');
+        const userProfile = await storage.getUserProfile(username);
+
+        if (!userProfile) {
+            utils.displayMessage('Account not found.', 'text-red-400 bg-red-800');
+            return false;
+        }
+
+        // Verify master password before deletion
+        const kdfSalt = new Uint8Array(userProfile.kdfSalt);
+        const derivedKey = await crypto.deriveKeyFromPassword(masterPassword, kdfSalt);
+
+        // Attempt to decrypt identity payload to verify key
+        try {
+            await crypto.decrypt(
+                userProfile.encryptedIdentity.ciphertext,
+                userProfile.encryptedIdentity.iv,
+                userProfile.encryptedIdentity.authTag,
+                derivedKey
+            );
+        } catch (decryptError) {
+            console.error('Master password verification failed during deletion:', decryptError);
+            utils.displayMessage('Incorrect master password. Account deletion cancelled.', 'text-red-400 bg-red-800');
+            return false;
+        }
+
+        // Master password verified, proceed with deletion
+        await storage.clearAllData(); // Clears user profile AND all journal entries
+        logoutUser(); // Clear current session
+        ui.renderLoginForm(document.getElementById('app-content-container')); // Go back to login/register screen
+
+        utils.displayMessage('Account and all data successfully deleted.', 'text-green-400 bg-green-800');
+        return true;
+    } catch (error) {
+        console.error('Account deletion failed:', error);
+        utils.displayMessage(`Account deletion failed: ${error.message}.`, 'text-red-400 bg-red-800');
+        return false;
+    } finally {
+        ui.hideLoadingOverlay();
     }
 }
