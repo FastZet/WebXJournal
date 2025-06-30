@@ -5,10 +5,10 @@
  * and secure key management for WebX Journal.
  */
 
-import * as storage from './storage.js';
+import * as storage from './storage.js'; // This line needs to be correctly parsed and executed
 import * as crypto from './crypto.js';
 import * as utils from './utils.js';
-import * as ui from './ui.js'; // ui.js is needed for rendering forms and main app
+import * as ui from './ui.js';
 
 // Current user's authentication state and encryption key
 let currentAuth = {
@@ -22,10 +22,19 @@ let currentAuth = {
 export const CURRENT_DATA_VERSION = 1;
 
 /**
+ * Helper to get the full currentAuth object. Used internally for deletion/export.
+ * @returns {object} The current authentication object.
+ */
+export function getCurrentAuth() {
+    return currentAuth;
+}
+
+/**
  * Retrieves the current authentication status.
  * @returns {Promise<{isLoggedIn: boolean, isRegistered: boolean, username: string|null}>}
  */
 export async function getAuthStatus() {
+    // The error occurs here if 'storage' is not defined
     const allProfileKeys = await storage.getAllProfileKeys();
     const isRegistered = allProfileKeys.length > 0;
     const username = currentAuth.username; // Get from current session
