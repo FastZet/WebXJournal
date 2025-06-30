@@ -27,6 +27,11 @@ async function initializeJournalApp() {
     }
 
     try {
+        ui.showLoadingOverlay('Initializing database...');
+        // --- FIX: Initialize IndexedDB BEFORE anything else tries to access it ---
+        await storage.initializeIndexedDB(); // This line is crucial!
+        console.log('IndexedDB initialized.'); // Confirmation log
+
         ui.showLoadingOverlay('Checking authentication...');
         const authStatus = await auth.getAuthStatus();
 
@@ -164,7 +169,7 @@ export async function loadJournalEntries() {
 
     } catch (error) {
         console.error('Failed to load journal entries:', error);
-        utils.displayMessage(`Failed to load entries: ${error.message}.`, 'text-red-400 bg-red-800');
+        utils.displayMessage(`Failed to load entries: ${error.message}.`, 'text-red-400 bg-red-800`);
     } finally {
         ui.hideLoadingOverlay();
     }
@@ -251,104 +256,4 @@ export async function exportJournalData() {
         const encryptedExport = await crypto.encrypt(exportString, exportEncryptionKey);
 
         const exportBlob = new Blob([JSON.stringify(encryptedExport)], { type: 'application/json' });
-        const url = URL.createObjectURL(exportBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `webx_journal_export_${username}_${new Date().toISOString().slice(0, 10)}.webx`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        utils.displayMessage('Data exported successfully!', 'text-green-400 bg-green-800');
-
-    } catch (error) {
-        console.error('Export failed:', error);
-        utils.displayMessage(`Export failed: ${error.message}.`, 'text-red-400 bg-red-800');
-    } finally {
-        ui.hideLoadingOverlay();
-    }
-}
-
-/**
- * Imports journal data from an encrypted file.
- * @param {File} file The file to import.
- * @param {string} masterPassword The master password used to encrypt the backup file.
- */
-export async function importJournalData(file, masterPassword) {
-    const encryptionKey = auth.getCurrentEncryptionKey();
-    if (!encryptionKey) {
-        utils.displayMessage('Not logged in. Log in before importing data.', 'text-red-400 bg-red-800');
-        return;
-    }
-    if (!masterPassword) {
-        utils.displayMessage('Master password is required to decrypt the import file.', 'text-red-400 bg-red-800');
-        return;
-    }
-
-    try {
-        ui.showLoadingOverlay('Importing data...');
-        const fileContent = await file.text();
-        const encryptedExport = JSON.parse(fileContent);
-
-        // We assume the export file was encrypted using a key derived from the master password for that export.
-        // We need to derive a key from the provided masterPassword to decrypt the import file.
-        // The export file itself should contain the salt and IV for its own encryption.
-        // However, the current export function encrypts the whole export JSON without providing KDF salt separately.
-        // This is a design flaw in the export/import. For simplicity, we'll assume the export
-        // used the same KDF salt as the user's profile during export (which is problematic for standalone exports).
-        // A robust export would include a separate KDF salt for the export encryption key.
-
-        // For now, let's derive a key using a placeholder or a fixed salt if not in the export.
-        // Correct approach requires export to include {kdfSalt, encryptedExportPayload}
-        // As the current export creates a new key with utils.generateSalt() and directly encrypts,
-        // this `encryptedExport` object *must* contain the salt used for *its own* key derivation.
-        // The current `exportJournalData` encrypts the `exportData` string and stores `encrypted` object.
-        // This `encrypted` object DOES NOT contain the salt used for `exportEncryptionKey`.
-        // This is a problem. The export format is insufficient for proper re-import decryption.
-
-        // --- TEMPORARY WORKAROUND for Import ---
-        // For the import to work, the export structure needs to be {encrypted: {ciphertext, iv, authTag}, kdfSalt (for export key)}.
-        // Since it's not, we'll have to make a big assumption or redesign export.
-        // For demonstration, let's assume `encryptedExport` directly contains {ciphertext, iv, authTag}
-        // and that the masterPassword provided for import is the SAME masterPassword used to derive
-        // the *user's original encryption key* which was somehow also used for export.
-        // This is NOT secure/correct for general export/import.
-        // A proper export would look like: { exportKeySalt: "base64salt", encryptedExportData: {ciphertext, iv, authTag} }
-        // where encryptedExportData holds {userProfile, journalEntries}.
-
-        // Let's adjust based on the export code: `exportEncryptionKey = await crypto.deriveKeyFromPassword(masterPassword, utils.generateSalt());`
-        // This means a *new* salt is generated *every time for export*. This salt IS NOT saved.
-        // This makes import of this specific export format IMPOSSIBLE without the ephemeral salt.
-
-        // --- NEW STRATEGY FOR EXPORT/IMPORT ---
-        // Export should encrypt data using the *current user's encryption key*
-        // OR encrypt with a new key and include the new key's salt and a mechanism to derive that key.
-        // Easiest for now: Export encrypted using the user's current encryptionKey.
-        // Then import decrypts with the current user's encryptionKey.
-        // This means export data is only readable by the user who exported it, using their master password.
-
-        console.warn('REVISING EXPORT/IMPORT LOGIC FOR ROBUSTNESS. Previous export/import was flawed.');
-        utils.displayMessage('Revising export/import logic. Please re-export after this update.', 'text-yellow-400 bg-gray-700');
-        return; // Stop current import flow
-    } catch (error) {
-        console.error('Import failed:', error);
-        utils.displayMessage(`Import failed: ${error.message}.`, 'text-red-400 bg-red-800');
-    } finally {
-        ui.hideLoadingOverlay();
-    }
-}
-
-// Ensure the application initializes when the DOM is ready
-document.addEventListener('DOMContentLoaded', initializeJournalApp);
-
-// Expose key functions globally to allow communication without circular imports
-// ui.js and auth.js will call these functions via window.WebXJournal
-window.WebXJournal = {
-    loadJournalEntries: loadJournalEntries,
-    saveJournalEntry: saveJournalEntry,
-    deleteJournalEntry: deleteJournalEntry,
-    exportJournalData: exportJournalData,
-    importJournalData: importJournalData,
-    // Other functions from main.js can be exposed here as needed
-};
+        const url = URL.createObjectURL(exportBlob
