@@ -17,9 +17,9 @@ let journalEntryContentInput; // Declared globally
 let sessionTimerInterval;
 let sessionTimeoutId; // For the inactivity timeout
 
-const SESSION_DURATION_SECONDS = 1800; // 30 minutes for demonstration
+const SESSION_DURATION_SECONDS = 300; // Changed to 5 minutes (300 seconds)
 let timeLeft = SESSION_DURATION_SECONDS;
-
+let warningShown = false; // Flag to ensure warning is shown only once per session
 
 const loadingOverlay = document.createElement('div');
 loadingOverlay.id = 'loading-overlay';
@@ -37,6 +37,16 @@ messageContainer.id = 'message-container';
 messageContainer.className = 'fixed top-4 right-4 z-50 flex flex-col items-end space-y-2 max-w-xs sm:max-w-md';
 document.body.appendChild(messageContainer);
 
+// New element for timeout warning popup
+const warningPopup = document.createElement('div');
+warningPopup.id = 'timeout-warning-popup';
+warningPopup.className = 'fixed bottom-4 right-4 bg-yellow-800 text-white p-4 rounded-lg shadow-xl z-50 hidden';
+warningPopup.innerHTML = `
+    <p class="font-bold mb-2">Session expiring soon!</p>
+    <p class="text-sm">Your session will end in <span id="warning-countdown"></span>. Please save any unsaved work.</p>
+    <button id="dismiss-warning" class="mt-3 bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded-md text-xs">Dismiss</button>
+`;
+document.body.appendChild(warningPopup);
 
 /**
  * Shows the loading overlay with an optional message.
@@ -58,15 +68,18 @@ export function hideLoadingOverlay() {
 }
 
 /**
- * Generates the default journal entry title.
- * @returns {string} The default title in "Journal_Entry_YYYYMMDD" format.
+ * Generates the default journal entry title with date and time.
+ * @returns {string} The default title in "Journal_Entry_YYYYMMDD_HHMMSS" format.
  */
 function getDefaultJournalTitle() {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
     const day = String(today.getDate()).padStart(2, '0');
-    return `Journal_Entry_${year}${month}${day}`;
+    const hours = String(today.getHours()).padStart(2, '0');
+    const minutes = String(today.getMinutes()).padStart(2, '0');
+    const seconds = String(today.getSeconds()).padStart(2, '0');
+    return `Journal_Entry_${year}${month}${day}_${hours}${minutes}${seconds}`;
 }
 
 
@@ -306,7 +319,16 @@ function startSessionTimer() {
     clearTimeout(sessionTimeoutId);
 
     timeLeft = SESSION_DURATION_SECONDS; // Reset time
+    warningShown = false; // Reset warning flag
+    hideWarningPopup(); // Ensure warning is hidden on new session start
+
     const sessionTimerElement = document.getElementById('session-timer');
+    if (sessionTimerElement) {
+        // Initial display
+        const initialMinutes = Math.floor(timeLeft / 60);
+        const initialSeconds = timeLeft % 60;
+        sessionTimerElement.textContent = `Session: ${String(initialMinutes).padStart(2, '0')}:${String(initialSeconds).padStart(2, '0')}`;
+    }
 
     // Update timer display every second
     sessionTimerInterval = setInterval(() => {
@@ -317,6 +339,11 @@ function startSessionTimer() {
             if (sessionTimerElement) {
                 sessionTimerElement.textContent = `Session: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
             }
+
+            // Show warning popup in the last minute
+            if (timeLeft <= 60 && !warningShown) {
+                showWarningPopup();
+            }
         } else {
             clearInterval(sessionTimerInterval);
             if (auth.getAuthStatus().isLoggedIn) { // Only logout if still logged in
@@ -324,6 +351,7 @@ function startSessionTimer() {
                 renderLoginForm(document.getElementById('app-content-container'));
                 utils.displayMessage('Session timed out. Please log in again.', 'text-red-400 bg-red-800');
             }
+            hideWarningPopup(); // Hide warning when session ends
         }
     }, 1000);
 
@@ -335,6 +363,9 @@ function startSessionTimer() {
     document.addEventListener('keydown', resetSessionTimeout);
     document.addEventListener('click', resetSessionTimeout);
     document.addEventListener('scroll', resetSessionTimeout);
+
+    // Event listener for dismissing the warning
+    document.getElementById('dismiss-warning').addEventListener('click', hideWarningPopup);
 }
 
 /**
@@ -349,16 +380,51 @@ function resetSessionTimeout() {
             auth.logoutUser();
             renderLoginForm(document.getElementById('app-content-container'));
             utils.displayMessage('You were logged out due to inactivity.', 'text-red-400 bg-red-800');
+            hideWarningPopup(); // Hide warning on actual logout
         }
     }, (SESSION_DURATION_SECONDS + 5) * 1000); // Give a small buffer (5 seconds) after display runs out
-    
+
     // Also reset the display timer if activity happens before session ends
-    if (timeLeft <= 0) { // If session already timed out, restart it
-        startSessionTimer();
-    } else { // If still active, just reset the countdown for display
+    if (timeLeft < SESSION_DURATION_SECONDS) { // Only reset if not already at full time
         timeLeft = SESSION_DURATION_SECONDS;
+        warningShown = false; // Reset warning flag if user becomes active again
+        hideWarningPopup();
+        const sessionTimerElement = document.getElementById('session-timer');
+        if (sessionTimerElement) {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            sessionTimerElement.textContent = `Session: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
     }
 }
+
+/**
+ * Displays the session timeout warning popup.
+ */
+function showWarningPopup() {
+    warningPopup.classList.remove('hidden');
+    warningShown = true;
+    const countdownElement = document.getElementById('warning-countdown');
+    if (countdownElement) {
+        countdownElement.textContent = `${timeLeft} seconds`;
+    }
+    // Update countdown in popup
+    const popupCountdownInterval = setInterval(() => {
+        if (timeLeft > 0 && warningPopup.classList.contains('hidden') === false) {
+            countdownElement.textContent = `${timeLeft} seconds`;
+        } else {
+            clearInterval(popupCountdownInterval);
+        }
+    }, 1000);
+}
+
+/**
+ * Hides the session timeout warning popup.
+ */
+function hideWarningPopup() {
+    warningPopup.classList.add('hidden');
+}
+
 
 /**
  * Stops the session timer. Call this on logout.
@@ -370,6 +436,8 @@ function stopSessionTimer() {
     if (sessionTimerElement) {
         sessionTimerElement.textContent = 'Session: --:--';
     }
+    hideWarningPopup();
+    warningShown = false; // Reset flag
     // Remove activity listeners to prevent memory leaks if app state changes significantly
     document.removeEventListener('mousemove', resetSessionTimeout);
     document.removeEventListener('keydown', resetSessionTimeout);
@@ -407,7 +475,7 @@ export function renderJournalEntry(entry) {
         <div class="journal-content-preview text-gray-300 mb-4 overflow-hidden max-h-24 leading-relaxed">${utils.escapeHTML(entry.content)}</div>
         ${entry.isCorrupted ? '<p class="text-red-400 font-bold">This entry could not be decrypted.</p>' : ''}
         <div class="flex space-x-2">
-            <button class="view-entry-button bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-md text-sm">View Full</button>
+            <button class="view-entry-button bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-md text-sm" data-id="${entry.id}">View Full</button>
             <button class="edit-entry-button bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded-md text-sm" data-id="${entry.id}">Edit</button>
             <button class="delete-entry-button bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm" data-id="${entry.id}">Delete</button>
         </div>
@@ -415,8 +483,7 @@ export function renderJournalEntry(entry) {
 
     // Add event listeners for buttons
     entryElement.querySelector('.view-entry-button').addEventListener('click', () => {
-        // Simple modal or alert for full view
-        alert(`Title: ${entry.title}\n\nDate: ${formattedDate}\n\nContent:\n${entry.content}`);
+        renderFullEntryView(entry); // Call new function for full view
     });
 
     entryElement.querySelector('.edit-entry-button').addEventListener('click', () => {
@@ -440,6 +507,64 @@ export function renderJournalEntry(entry) {
     // Insert new entries at the top of the list
     journalList.prepend(entryElement);
 }
+
+/**
+ * Renders the full view of a single journal entry in place of the list.
+ * @param {object} entry The journal entry object to display.
+ */
+function renderFullEntryView(entry) {
+    const journalListContainer = document.getElementById('journal-entries-list');
+    if (!journalListContainer) {
+        console.error('Journal entries list container not found for full view.');
+        return;
+    }
+
+    const date = new Date(entry.timestamp);
+    const formattedDate = date.toLocaleString();
+
+    journalListContainer.innerHTML = `
+        <div class="full-entry-view bg-gray-800 p-6 rounded-lg shadow-xl border-l-4 border-indigo-600">
+            <button id="back-to-list-button" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm mb-4">
+                ← Back to All Entries
+            </button>
+            <h3 class="text-3xl font-bold mb-4 text-indigo-300">${utils.escapeHTML(entry.title)}</h3>
+            <p class="text-md text-gray-400 mb-6 border-b border-gray-700 pb-3">${formattedDate}</p>
+            <div class="prose prose-invert text-gray-200 leading-relaxed mb-8">
+                <p>${utils.escapeHTML(entry.content).replace(/\n/g, '<br>')}</p>
+            </div>
+            <div class="flex space-x-2">
+                <button class="edit-entry-button-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm" data-id="${entry.id}">Edit This Entry</button>
+                <button class="delete-entry-button-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm" data-id="${entry.id}">Delete This Entry</button>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('back-to-list-button').addEventListener('click', () => {
+        window.WebXJournal.loadJournalEntries(); // Re-load all entries to show the list again
+    });
+
+    // Attach edit/delete listeners for the full view as well
+    document.querySelector('.edit-entry-button-full').addEventListener('click', () => {
+        // Populate the form for editing
+        journalEntryTitleInput.value = entry.title;
+        journalEntryContentInput.value = entry.content;
+        currentEditingEntryId = entry.id; // Set the ID of the entry being edited
+        document.getElementById('save-entry-button').textContent = 'Update Entry';
+        journalEntryTitleInput.focus();
+        utils.displayMessage(`Editing entry: "${entry.title}"`, 'text-blue-300 bg-gray-700');
+        // Scroll to top of the page or entry form if necessary
+        document.getElementById('journal-entry-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.querySelector('.delete-entry-button-full').addEventListener('click', async () => {
+        if (confirm(`Are you sure you want to delete "${entry.title}"?`)) {
+            await window.WebXJournal.deleteJournalEntry(entry.id);
+            // After deletion, go back to the list view
+            window.WebXJournal.loadJournalEntries();
+        }
+    });
+}
+
 
 /**
  * Updates an existing journal entry's display in the list.
