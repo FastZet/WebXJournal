@@ -6,14 +6,10 @@
  */
 
 import * as auth from './auth.js';
-import * as main from './main.js'; // Import main to access its exposed functions
+// Removed: import * as main from './main.js'; // No longer directly importing main.js
 import * as utils from './utils.js'; // For utility functions like displayMessage
 
-// --- UI Element References ---
-// These will be dynamically assigned after rendering the main app structure
-let journalEntryForm = null;
-let journalEntryTitleInput = null;
-let journalEntryContentInput = null;
+// CurrentEditingEntryId and mainJournalApp methods will now communicate via window.WebXJournal
 let currentEditingEntryId = null; // To store the ID of the entry being edited
 
 // --- Global UI Elements ---
@@ -218,9 +214,9 @@ export function renderMainJournalApp(container, username) {
     utils.initializeMessageContainer(messageContainer); // Initialize message container for this view
 
     // Cache element references after rendering
-    journalEntryForm = document.getElementById('journal-entry-form');
-    journalEntryTitleInput = document.getElementById('journal-entry-title');
-    journalEntryContentInput = document.getElementById('journal-entry-content');
+    const journalEntryForm = document.getElementById('journal-entry-form');
+    const journalEntryTitleInput = document.getElementById('journal-entry-title');
+    const journalEntryContentInput = document.getElementById('journal-entry-content');
 
     // Set default journal entry title
     journalEntryTitleInput.value = getDefaultJournalTitle();
@@ -232,7 +228,7 @@ export function renderMainJournalApp(container, username) {
         utils.displayMessage('You have been logged out.', 'text-blue-300 bg-gray-700');
     });
 
-    document.getElementById('export-button').addEventListener('click', main.exportJournalData);
+    document.getElementById('export-button').addEventListener('click', window.WebXJournal.exportJournalData);
 
     const importFileInput = document.getElementById('import-file-input');
     importFileInput.addEventListener('change', async (e) => {
@@ -240,7 +236,7 @@ export function renderMainJournalApp(container, username) {
         if (file) {
             const password = prompt('Enter the master password for the backup file:');
             if (password) {
-                await main.importJournalData(file, password);
+                await window.WebXJournal.importJournalData(file, password);
                 importFileInput.value = ''; // Clear file input
             } else {
                 utils.displayMessage('Import cancelled: Master password not provided.', 'text-red-400 bg-red-800');
@@ -266,11 +262,12 @@ export function renderMainJournalApp(container, username) {
         e.preventDefault();
         const title = journalEntryTitleInput.value;
         const content = journalEntryContentInput.value;
-        await main.saveJournalEntry(currentEditingEntryId, title, content);
+        await window.WebXJournal.saveJournalEntry(currentEditingEntryId, title, content);
         currentEditingEntryId = null; // Clear editing state after save
         document.getElementById('save-entry-button').textContent = 'Save Entry';
         // Re-set default title after saving a new entry
         journalEntryTitleInput.value = getDefaultJournalTitle();
+        journalEntryContentInput.value = ''; // Clear content too for new entry
     });
 
     document.getElementById('clear-form-button').addEventListener('click', () => {
@@ -284,7 +281,8 @@ export function renderMainJournalApp(container, username) {
     });
 
     // Load existing entries after rendering the main app
-    main.loadJournalEntries();
+    // IMPORTANT: This call now correctly uses window.WebXJournal
+    window.WebXJournal.loadJournalEntries();
 }
 
 /**
@@ -340,13 +338,13 @@ export function renderJournalEntry(entry) {
 
     entryElement.querySelector('.delete-entry-button').addEventListener('click', async () => {
         if (confirm(`Are you sure you want to delete "${entry.title}"?`)) {
-            await main.deleteJournalEntry(entry.id);
+            // IMPORTANT: This call now correctly uses window.WebXJournal
+            await window.WebXJournal.deleteJournalEntry(entry.id);
         }
     });
 
     // Insert new entries at the top of the list
     journalList.prepend(entryElement);
-    // utils.displayMessage('Entry added to list.', 'hidden'); // Silently add - removed as it's not useful
 }
 
 /**
@@ -365,7 +363,6 @@ export function updateJournalEntryInList(updatedEntry) {
     }
     // Re-render the entry, which will add it to the top
     renderJournalEntry(updatedEntry);
-    // utils.displayMessage('Entry updated in list.', 'hidden'); // Silently update - removed as it's not useful
 }
 
 /**
@@ -377,5 +374,4 @@ export function removeJournalEntryFromList(id) {
     if (entryElement) {
         entryElement.remove();
     }
-    // utils.displayMessage('Entry removed from list.', 'hidden'); // Silently remove - removed as it's not useful
 }
