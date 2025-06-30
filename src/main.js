@@ -302,11 +302,6 @@ export async function importJournalData(file, masterPassword) {
         // For now, let's derive a key using a placeholder or a fixed salt if not in the export.
         // Correct approach requires export to include {kdfSalt, encryptedExportPayload}
         // As the current export creates a new key with utils.generateSalt() and directly encrypts,
-        // we can't reliably re-derive without knowing that salt.
-        // Let's simplify this for current architecture:
-        // Assume the CURRENT user's kdfSalt is used for export (which is NOT what `exportJournalData` does)
-        // OR the export JSON contains its OWN salt for the exported data.
-        // Given `exportJournalData` generates a `new utils.generateSalt()` for the export key,
         // this `encryptedExport` object *must* contain the salt used for *its own* key derivation.
         // The current `exportJournalData` encrypts the `exportData` string and stores `encrypted` object.
         // This `encrypted` object DOES NOT contain the salt used for `exportEncryptionKey`.
@@ -332,11 +327,6 @@ export async function importJournalData(file, masterPassword) {
         // Easiest for now: Export encrypted using the user's current encryptionKey.
         // Then import decrypts with the current user's encryptionKey.
         // This means export data is only readable by the user who exported it, using their master password.
-
-        // REVISING exportJournalData and importJournalData for robustness and to make import possible.
-        // Export will now save the data encrypted with the user's CURRENT encryptionKey,
-        // not a newly derived one from the password prompt.
-        // Then import uses the CURRENT user's encryptionKey to decrypt.
 
         console.warn('REVISING EXPORT/IMPORT LOGIC FOR ROBUSTNESS. Previous export/import was flawed.');
         utils.displayMessage('Revising export/import logic. Please re-export after this update.', 'text-yellow-400 bg-gray-700');
