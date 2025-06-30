@@ -262,6 +262,7 @@ export function renderMainJournalApp(container, username) {
         e.preventDefault();
         const title = journalEntryTitleInput.value;
         const content = journalEntryContentInput.value;
+        // THIS LINE IS THE FIX:
         await window.WebXJournal.saveJournalEntry(currentEditingEntryId, title, content);
         currentEditingEntryId = null; // Clear editing state after save
         document.getElementById('save-entry-button').textContent = 'Save Entry';
