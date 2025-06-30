@@ -31,7 +31,7 @@ async function initializeJournalApp() {
         // --- FIX: Initialize IndexedDB BEFORE anything else tries to access it ---
         await storage.initializeIndexedDB(); // This line is crucial!
         console.log('IndexedDB initialized.'); // Confirmation log
-        // Force cache refresh: June 30, 2025 - V1 // <--- ADD THIS LINE
+        // Force cache refresh: June 30, 2025 - V1 // <--- CORRECTED LINE
 
         ui.showLoadingOverlay('Checking authentication...');
         const authStatus = await auth.getAuthStatus();
@@ -170,7 +170,7 @@ export async function loadJournalEntries() {
 
     } catch (error) {
         console.error('Failed to load journal entries:', error);
-        utils.displayMessage(`Failed to load entries: ${error.message}.`, 'text-red-400 bg-red-800`);
+        utils.displayMessage(`Failed to load entries: ${error.message}.`, 'text-red-400 bg-red-800');
     } finally {
         ui.hideLoadingOverlay();
     }
@@ -257,4 +257,29 @@ export async function exportJournalData() {
         const encryptedExport = await crypto.encrypt(exportString, exportEncryptionKey);
 
         const exportBlob = new Blob([JSON.stringify(encryptedExport)], { type: 'application/json' });
-        const url = URL.createObjectURL(exportBlob
+        const url = URL.createObjectURL(exportBlob); // CORRECTED LINE HERE
+        utils.downloadFile(url, `WebXJournal_backup_${username}_${Date.now()}.json`);
+        URL.revokeObjectURL(url); // Clean up the URL object
+
+        utils.displayMessage('Journal data exported successfully!', 'text-green-400 bg-green-800');
+
+    } catch (error) {
+        console.error('Failed to export journal data:', error);
+        utils.displayMessage(`Failed to export data: ${error.message}.`, 'text-red-400 bg-red-800');
+    } finally {
+        ui.hideLoadingOverlay();
+    }
+}
+
+// Add global access to functions needed by ui.js or other modules via window.WebXJournal
+window.WebXJournal = {
+    initializeJournalApp,
+    saveJournalEntry,
+    loadJournalEntries,
+    deleteJournalEntry,
+    exportJournalData,
+    // importJournalData, // This function is not yet implemented or provided
+};
+
+// Initialize the app when the DOM is fully loaded
+document.addEventListener('DOMContentLoaded', initializeJournalApp);
