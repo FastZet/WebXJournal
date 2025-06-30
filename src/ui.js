@@ -54,6 +54,19 @@ export function hideLoadingOverlay() {
 }
 
 /**
+ * Generates the default journal entry title.
+ * @returns {string} The default title in "Journal_Entry_YYYYMMDD" format.
+ */
+function getDefaultJournalTitle() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+    const day = String(today.getDate()).padStart(2, '0');
+    return `Journal_Entry_${year}${month}${day}`;
+}
+
+
+/**
  * Renders the registration form.
  * @param {HTMLElement} container The DOM element to render the form into.
  */
@@ -83,6 +96,7 @@ export function renderRegisterForm(container) {
             </p>
         </div>
     `;
+    utils.initializeMessageContainer(messageContainer); // Initialize message container for this view
 
     document.getElementById('register-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -129,6 +143,7 @@ export function renderLoginForm(container) {
             </p>
         </div>
     `;
+    utils.initializeMessageContainer(messageContainer); // Initialize message container for this view
 
     document.getElementById('login-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -200,11 +215,15 @@ export function renderMainJournalApp(container, username) {
             </main>
         </div>
     `;
+    utils.initializeMessageContainer(messageContainer); // Initialize message container for this view
 
     // Cache element references after rendering
     journalEntryForm = document.getElementById('journal-entry-form');
     journalEntryTitleInput = document.getElementById('journal-entry-title');
     journalEntryContentInput = document.getElementById('journal-entry-content');
+
+    // Set default journal entry title
+    journalEntryTitleInput.value = getDefaultJournalTitle();
 
     // Attach event listeners
     document.getElementById('logout-button').addEventListener('click', () => {
@@ -250,13 +269,16 @@ export function renderMainJournalApp(container, username) {
         await main.saveJournalEntry(currentEditingEntryId, title, content);
         currentEditingEntryId = null; // Clear editing state after save
         document.getElementById('save-entry-button').textContent = 'Save Entry';
+        // Re-set default title after saving a new entry
+        journalEntryTitleInput.value = getDefaultJournalTitle();
     });
 
     document.getElementById('clear-form-button').addEventListener('click', () => {
         journalEntryForm.reset();
         currentEditingEntryId = null;
         document.getElementById('save-entry-button').textContent = 'Save Entry';
-        journalEntryTitleInput.value = '';
+        // Set default title on clear
+        journalEntryTitleInput.value = getDefaultJournalTitle();
         journalEntryContentInput.value = '';
         utils.displayMessage('Form cleared.', 'text-blue-300 bg-gray-700');
     });
@@ -324,7 +346,7 @@ export function renderJournalEntry(entry) {
 
     // Insert new entries at the top of the list
     journalList.prepend(entryElement);
-    utils.displayMessage('Entry added to list.', 'hidden'); // Silently add
+    // utils.displayMessage('Entry added to list.', 'hidden'); // Silently add - removed as it's not useful
 }
 
 /**
@@ -343,7 +365,7 @@ export function updateJournalEntryInList(updatedEntry) {
     }
     // Re-render the entry, which will add it to the top
     renderJournalEntry(updatedEntry);
-    utils.displayMessage('Entry updated in list.', 'hidden'); // Silently update
+    // utils.displayMessage('Entry updated in list.', 'hidden'); // Silently update - removed as it's not useful
 }
 
 /**
@@ -355,5 +377,5 @@ export function removeJournalEntryFromList(id) {
     if (entryElement) {
         entryElement.remove();
     }
-    utils.displayMessage('Entry removed from list.', 'hidden'); // Silently remove
+    // utils.displayMessage('Entry removed from list.', 'hidden'); // Silently remove - removed as it's not useful
 }
