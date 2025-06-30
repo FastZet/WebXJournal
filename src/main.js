@@ -2,7 +2,7 @@
 
 import * as auth from './auth.js';
 import * as ui from './ui.js';
-import * as db from './storage.js';
+import * as db from './storage.js'; // Ensure db is imported
 import * as crypto from './crypto.js';
 import * as utils from './utils.js';
 
@@ -11,7 +11,7 @@ import * as utils from './utils.js';
 window.WebXJournal = {
     auth: auth,
     ui: ui,
-    db: db,
+    db: db, // Make db module accessible
     crypto: crypto,
     utils: utils,
     // Functions that are called by UI events directly
@@ -122,8 +122,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    ui.showLoadingOverlay('Checking authentication...');
+    ui.showLoadingOverlay('Initializing application...');
     try {
+        // --- IMPORTANT: Initialize IndexedDB FIRST ---
+        await WebXJournal.db.initializeIndexedDB(); // Call and await IndexedDB initialization
+
         const isLoggedIn = await auth.checkAuthStatus();
         if (isLoggedIn) {
             ui.renderMainJournalApp(appWrapper, auth.getCurrentUsername());
@@ -133,9 +136,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             ui.renderLoginForm(appWrapper);
         }
     } catch (error) {
-        console.error("Authentication check failed:", error);
-        utils.displayMessage(`Failed to initialize: ${error.message}`, 'text-red-400 bg-red-800');
-        ui.renderLoginForm(appWrapper); // Fallback to login form on error
+        console.error("Application initialization failed:", error);
+        utils.displayMessage(`Failed to initialize application: ${error.message}`, 'text-red-400 bg-red-800');
+        // If IndexedDB fails to initialize, the app cannot proceed, so fall back to a basic message or login
+        ui.renderLoginForm(appWrapper); // Still show login form, but the error message should be visible
     } finally {
         ui.hideLoadingOverlay();
     }
