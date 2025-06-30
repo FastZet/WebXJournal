@@ -1,142 +1,285 @@
 // src/main.js
 
-import * as auth from './auth.js';
+/**
+ * @fileoverview Main application logic for WebX Journal.
+ * Initializes the app, handles journal entry operations (save, load, delete),
+ * and manages data export/import.
+ */
+
 import * as ui from './ui.js';
-import * as db from './storage.js';
+import * as auth from './auth.js';
+import * as storage from './storage.js';
 import * as crypto from './crypto.js';
 import * as utils from './utils.js';
 
-// Expose modules to the global WebXJournal object for easier access and testing
-// and to allow ui.js to call functions from other modules
-window.WebXJournal = {
-    auth: auth,
-    ui: ui,
-    db: db,
-    crypto: crypto,
-    utils: utils,
-    // Functions that are called by UI events directly
-    saveJournalEntry: async (id, title, content) => {
-        ui.showLoadingOverlay(id ? 'Updating entry...' : 'Saving entry...');
-        try {
-            const success = await db.saveEntry(id, title, content);
-            if (success) {
-                utils.displayMessage(id ? 'Entry updated successfully!' : 'Entry saved successfully!', 'text-green-300 bg-green-800');
-            }
-        } catch (error) {
-            console.error("Error saving entry:", error);
-            utils.displayMessage(`Error saving entry: ${error.message}`, 'text-red-400 bg-red-800');
-        } finally {
-            ui.hideLoadingOverlay();
-        }
-    },
-    loadJournalEntries: async () => {
-        ui.showLoadingOverlay('Loading entries...');
-        try {
-            const entries = await db.getEntries();
-            const journalList = document.getElementById('journal-entries-list');
-            if (journalList) {
-                journalList.innerHTML = ''; // Clear existing list
-                if (entries.length === 0) {
-                    journalList.innerHTML = `
-                        <div class="text-center p-8 text-gray-400 border border-gray-700 rounded-lg">
-                            <p class="text-lg mb-4">You don't have any journal entries yet.</p>
-                            <p>Click "+ New Journal Entry" to write your first entry!</p>
-                        </div>
-                    `;
-                } else {
-                    // Sort entries by timestamp in descending order (most recent first)
-                    entries.sort((a, b) => b.timestamp - a.timestamp);
-                    entries.forEach(entry => ui.renderJournalEntry(entry));
-                }
-            }
-        } catch (error) {
-            console.error("Error loading entries:", error);
-            utils.displayMessage(`Error loading entries: ${error.message}`, 'text-red-400 bg-red-800');
-        } finally {
-            ui.hideLoadingOverlay();
-        }
-    },
-    deleteJournalEntry: async (id) => {
-        ui.showLoadingOverlay('Deleting entry...');
-        try {
-            const success = await db.deleteEntry(id);
-            if (success) {
-                ui.removeJournalEntryFromList(id);
-                utils.displayMessage('Entry deleted successfully!', 'text-green-300 bg-green-800');
-            }
-        } catch (error) {
-            console.error("Error deleting entry:", error);
-            utils.displayMessage(`Error deleting entry: ${error.message}`, 'text-red-400 bg-red-800');
-        } finally {
-            ui.hideLoadingOverlay();
-        }
-    },
-    exportJournalData: async () => {
-        ui.showLoadingOverlay('Preparing export...');
-        try {
-            const backupData = await db.exportAllData();
-            if (backupData) {
-                const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `webx_journal_backup_${new Date().toISOString().slice(0,10)}.webx`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                utils.displayMessage('Journal data exported successfully!', 'text-green-300 bg-green-800');
-            } else {
-                utils.displayMessage('No data to export.', 'text-blue-300 bg-gray-700');
-            }
-        } catch (error) {
-            console.error("Error exporting data:", error);
-            utils.displayMessage(`Error exporting data: ${error.message}`, 'text-red-400 bg-red-800');
-        } finally {
-            ui.hideLoadingOverlay();
-        }
-    },
-    importJournalData: async (file, password) => {
-        ui.showLoadingOverlay('Importing data...');
-        try {
-            await db.importAllData(file, password);
-            utils.displayMessage('Journal data imported successfully!', 'text-green-300 bg-green-800');
-            // Re-render the main app to refresh the entries
-            ui.renderMainJournalApp(document.getElementById('app-content-wrapper'), auth.getCurrentUsername());
-        } catch (error) {
-            console.error("Error importing data:", error);
-            utils.displayMessage(`Error importing data: ${error.message}`, 'text-red-400 bg-red-800');
-        } finally {
-            ui.hideLoadingOverlay();
-        }
-    }
-};
+// --- Global Application State ---
+let allJournalEntries = []; // Cached array of decrypted entries
 
-
-// --- Main Application Initialization ---
-document.addEventListener('DOMContentLoaded', async () => {
-    // Get the main wrapper that contains both intro and the form/app area
-    const appWrapper = document.getElementById('app-content-wrapper');
-    if (!appWrapper) {
-        console.error("Application wrapper not found!");
+/**
+ * Initializes the WebX Journal application.
+ * Checks authentication status and renders the appropriate UI.
+ */
+async function initializeJournalApp() {
+    const appContentContainer = document.getElementById('app-content-container');
+    if (!appContentContainer) {
+        console.error('App content container not found!');
         return;
     }
 
-    ui.showLoadingOverlay('Checking authentication...');
     try {
-        const isLoggedIn = await auth.checkAuthStatus();
-        if (isLoggedIn) {
-            ui.renderMainJournalApp(appWrapper, auth.getCurrentUsername());
-            utils.displayMessage('Welcome back!', 'text-green-300 bg-green-800');
+        ui.showLoadingOverlay('Initializing database...');
+        // --- FIX: Initialize IndexedDB BEFORE anything else tries to access it ---
+        await storage.initializeIndexedDB(); // This line is crucial!
+        console.log('IndexedDB initialized.'); // Confirmation log
+        // Force cache refresh: June 30, 2025 - V1 // <--- CORRECTED LINE
+
+        ui.showLoadingOverlay('Checking authentication...');
+        const authStatus = await auth.getAuthStatus();
+
+        if (authStatus.isLoggedIn) {
+            ui.renderMainJournalApp(appContentContainer, authStatus.username);
+            // Entries will be loaded by ui.js calling loadJournalEntries via window.WebXJournal
+        } else if (authStatus.isRegistered) {
+            ui.renderLoginForm(appContentContainer);
         } else {
-            // Render login form into the appWrapper
-            ui.renderLoginForm(appWrapper);
+            ui.renderRegisterForm(appContentContainer);
         }
     } catch (error) {
-        console.error("Authentication check failed:", error);
+        console.error('Failed to initialize application:', error);
         utils.displayMessage(`Failed to initialize: ${error.message}`, 'text-red-400 bg-red-800');
-        ui.renderLoginForm(appWrapper); // Fallback to login form on error
+        // Fallback to login/register in case of initialization error
+        ui.renderRegisterForm(appContentContainer);
     } finally {
         ui.hideLoadingOverlay();
     }
-});
+}
+
+/**
+ * Saves a journal entry (new or existing).
+ * @param {string|null} id The ID of the entry if editing, or null for a new entry.
+ * @param {string} title The title of the journal entry.
+ * @param {string} content The content of the journal entry.
+ */
+export async function saveJournalEntry(id, title, content) {
+    console.log('Attempting to save entry:', { id, title, content });
+    const encryptionKey = auth.getCurrentEncryptionKey();
+    if (!encryptionKey) {
+        utils.displayMessage('Not logged in. Please log in to save entries.', 'text-red-400 bg-red-800');
+        return;
+    }
+
+    try {
+        ui.showLoadingOverlay(id ? 'Updating entry...' : 'Saving new entry...');
+
+        const timestamp = Date.now();
+        const entryToEncrypt = {
+            title: title,
+            content: content,
+            timestamp: timestamp
+        };
+
+        const encryptedData = await crypto.encrypt(JSON.stringify(entryToEncrypt), encryptionKey);
+
+        const journalEntry = {
+            id: id || utils.generateUniqueId(), // Generate new ID if not editing
+            timestamp: timestamp,
+            encrypted: encryptedData.ciphertext,
+            iv: encryptedData.iv,
+            authTag: encryptedData.authTag,
+            version: auth.CURRENT_DATA_VERSION // Data version for this entry
+        };
+
+        await storage.saveJournalEntry(journalEntry);
+
+        // Update local cache
+        const existingIndex = allJournalEntries.findIndex(entry => entry.id === journalEntry.id);
+        const decryptedEntry = { id: journalEntry.id, title, content, timestamp }; // Use current title/content for cached object
+
+        if (existingIndex !== -1) {
+            allJournalEntries[existingIndex] = decryptedEntry;
+            ui.updateJournalEntryInList(decryptedEntry);
+            utils.displayMessage('Entry updated successfully!', 'text-green-400 bg-green-800');
+        } else {
+            allJournalEntries.unshift(decryptedEntry); // Add new entry to the top
+            ui.renderJournalEntry(decryptedEntry);
+            utils.displayMessage('Entry saved successfully!', 'text-green-400 bg-green-800');
+        }
+        console.log('Entry saved successfully:', journalEntry.id);
+    } catch (error) {
+        console.error('Failed to save journal entry:', error);
+        utils.displayMessage(`Failed to save entry: ${error.message}. Please try again.`, 'text-red-400 bg-red-800');
+    } finally {
+        ui.hideLoadingOverlay();
+    }
+}
+
+/**
+ * Loads all journal entries for the current user.
+ */
+export async function loadJournalEntries() {
+    console.log('Attempting to load entries.');
+    const encryptionKey = auth.getCurrentEncryptionKey();
+    if (!encryptionKey) {
+        // This case should ideally not happen if login flow is correct,
+        // but robustly handle it.
+        console.warn('Cannot load entries: No encryption key available.');
+        allJournalEntries = []; // Clear any old entries
+        return;
+    }
+
+    try {
+        ui.showLoadingOverlay('Loading entries...');
+        const encryptedEntries = await storage.getAllJournalEntries();
+        const decryptedEntries = [];
+
+        for (const entry of encryptedEntries) {
+            try {
+                const decryptedContent = await crypto.decrypt(
+                    entry.encrypted,
+                    entry.iv,
+                    entry.authTag,
+                    encryptionKey
+                );
+                const parsedContent = JSON.parse(decryptedContent);
+                decryptedEntries.push({
+                    id: entry.id,
+                    timestamp: entry.timestamp,
+                    title: parsedContent.title,
+                    content: parsedContent.content,
+                });
+            } catch (decryptError) {
+                console.warn(`Could not decrypt entry ${entry.id}:`, decryptError);
+                // Push a placeholder for corrupted entries
+                decryptedEntries.push({
+                    id: entry.id,
+                    timestamp: entry.timestamp,
+                    title: 'Corrupted or Undecryptable Entry',
+                    content: 'This entry could not be decrypted. It might be corrupted or saved with a different master password.',
+                    isCorrupted: true
+                });
+            }
+        }
+        // Sort entries by timestamp, newest first
+        decryptedEntries.sort((a, b) => b.timestamp - a.timestamp);
+        allJournalEntries = decryptedEntries;
+
+        // Clear existing list and render all entries
+        document.getElementById('journal-entries-list').innerHTML = ''; // Clear previous entries
+        allJournalEntries.forEach(entry => ui.renderJournalEntry(entry));
+        utils.displayMessage(`Loaded ${allJournalEntries.length} entries.`, 'text-blue-300 bg-gray-700');
+
+    } catch (error) {
+        console.error('Failed to load journal entries:', error);
+        utils.displayMessage(`Failed to load entries: ${error.message}.`, 'text-red-400 bg-red-800');
+    } finally {
+        ui.hideLoadingOverlay();
+    }
+}
+
+/**
+ * Deletes a specific journal entry.
+ * @param {string} id The ID of the entry to delete.
+ */
+export async function deleteJournalEntry(id) {
+    if (!id) {
+        utils.displayMessage('No entry selected for deletion.', 'text-red-400 bg-red-800');
+        return;
+    }
+
+    try {
+        ui.showLoadingOverlay('Deleting entry...');
+        await storage.deleteJournalEntry(id);
+        allJournalEntries = allJournalEntries.filter(entry => entry.id !== id);
+        ui.removeJournalEntryFromList(id);
+        utils.displayMessage('Entry deleted successfully.', 'text-green-400 bg-green-800');
+    } catch (error) {
+        console.error('Failed to delete journal entry:', error);
+        utils.displayMessage(`Failed to delete entry: ${error.message}.`, 'text-red-400 bg-red-800');
+    } finally {
+        ui.hideLoadingOverlay();
+    }
+}
+
+/**
+ * Exports all journal data (user profile and entries) as an encrypted JSON file.
+ */
+export async function exportJournalData() {
+    const encryptionKey = auth.getCurrentEncryptionKey();
+    const username = auth.getCurrentUsername();
+
+    if (!encryptionKey || !username) {
+        utils.displayMessage('Not logged in. Log in to export data.', 'text-red-400 bg-red-800');
+        return;
+    }
+
+    const masterPassword = prompt('Enter your master password to encrypt the export file:');
+    if (!masterPassword) {
+        utils.displayMessage('Export cancelled: Master password not provided.', 'text-red-400 bg-red-800');
+        return;
+    }
+
+    try {
+        ui.showLoadingOverlay('Exporting data...');
+
+        // Verify master password by re-deriving the key and comparing to current
+        const kdfSalt = auth.getCurrentAuth().kdfSalt;
+        const verifiedKey = await crypto.deriveKeyFromPassword(masterPassword, kdfSalt);
+
+        // This comparison method is not ideal as CryptoKey objects cannot be directly compared
+        // A better approach is to try decrypting the identity payload with the 'verifiedKey'
+        // Let's re-decrypt the identity to confirm the password.
+        const encryptedIdentity = auth.getCurrentAuth().encryptedIdentity;
+        try {
+            await crypto.decrypt(
+                encryptedIdentity.ciphertext,
+                encryptedIdentity.iv,
+                encryptedIdentity.authTag,
+                verifiedKey
+            );
+        } catch (error) {
+            utils.displayMessage('Incorrect master password. Export cancelled.', 'text-red-400 bg-red-800');
+            return;
+        }
+
+        const allEntries = await storage.getAllJournalEntries();
+        const userProfile = await storage.getUserProfile(username);
+
+        const exportData = {
+            version: auth.CURRENT_DATA_VERSION,
+            type: 'WebXJournalBackup',
+            userProfile: userProfile,
+            journalEntries: allEntries,
+        };
+
+        const exportString = JSON.stringify(exportData);
+        const exportEncryptionKey = await crypto.deriveKeyFromPassword(masterPassword, utils.generateSalt()); // New key for export
+
+        const encryptedExport = await crypto.encrypt(exportString, exportEncryptionKey);
+
+        const exportBlob = new Blob([JSON.stringify(encryptedExport)], { type: 'application/json' });
+        const url = URL.createObjectURL(exportBlob); // CORRECTED LINE HERE
+        utils.downloadFile(url, `WebXJournal_backup_${username}_${Date.now()}.json`);
+        URL.revokeObjectURL(url); // Clean up the URL object
+
+        utils.displayMessage('Journal data exported successfully!', 'text-green-400 bg-green-800');
+
+    } catch (error) {
+        console.error('Failed to export journal data:', error);
+        utils.displayMessage(`Failed to export data: ${error.message}.`, 'text-red-400 bg-red-800');
+    } finally {
+        ui.hideLoadingOverlay();
+    }
+}
+
+// Add global access to functions needed by ui.js or other modules via window.WebXJournal
+window.WebXJournal = {
+    initializeJournalApp,
+    saveJournalEntry,
+    loadJournalEntries,
+    deleteJournalEntry,
+    exportJournalData,
+    // importJournalData, // This function is not yet implemented or provided
+};
+
+// Initialize the app when the DOM is fully loaded
+document.addEventListener('DOMContentLoaded', initializeJournalApp);
