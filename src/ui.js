@@ -1,355 +1,359 @@
 // src/ui.js
 
 /**
- * @fileoverview Manages all user interface rendering functions for WebX Journal.
- * This module is responsible for dynamically injecting HTML forms and other UI elements
- * into the main application container.
+ * @fileoverview Manages all user interface rendering and interactions for WebX Journal.
+ * This module is responsible for dynamically updating the DOM based on application state.
  */
 
-import { registerUser, loginUser } from './auth.js'; // Will be created next
-import { displayMessage } from './utils.js'; // A new utility for messages
+import * as auth from './auth.js';
+import * as main from './main.js'; // Import main to access its exposed functions
+import * as utils from './utils.js'; // For utility functions like displayMessage
+
+// --- UI Element References ---
+// These will be dynamically assigned after rendering the main app structure
+let journalEntryForm = null;
+let journalEntryTitleInput = null;
+let journalEntryContentInput = null;
+let currentEditingEntryId = null; // To store the ID of the entry being edited
+
+// --- Global UI Elements ---
+const loadingOverlay = document.createElement('div');
+loadingOverlay.id = 'loading-overlay';
+loadingOverlay.className = 'fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden';
+loadingOverlay.innerHTML = `
+    <div class="bg-gray-800 p-6 rounded-lg shadow-xl flex flex-col items-center">
+        <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"></div>
+        <p id="loading-message" class="text-white text-lg">Loading...</p>
+    </div>
+`;
+document.body.appendChild(loadingOverlay);
+
+const messageContainer = document.createElement('div');
+messageContainer.id = 'message-container';
+messageContainer.className = 'fixed top-4 right-4 z-50 flex flex-col items-end space-y-2 max-w-xs sm:max-w-md';
+document.body.appendChild(messageContainer);
+
 
 /**
- * Renders the user registration form into the specified container.
- * @param {HTMLElement} container The DOM element where the form should be rendered.
+ * Shows the loading overlay with an optional message.
+ * @param {string} message The message to display on the loading overlay.
+ */
+export function showLoadingOverlay(message = 'Loading...') {
+    const loadingMessageElement = document.getElementById('loading-message');
+    if (loadingMessageElement) {
+        loadingMessageElement.textContent = message;
+    }
+    loadingOverlay.classList.remove('hidden');
+}
+
+/**
+ * Hides the loading overlay.
+ */
+export function hideLoadingOverlay() {
+    loadingOverlay.classList.add('hidden');
+}
+
+/**
+ * Renders the registration form.
+ * @param {HTMLElement} container The DOM element to render the form into.
  */
 export function renderRegisterForm(container) {
     container.innerHTML = `
-        <div class="bg-gray-700 p-8 rounded-xl shadow-lg w-full max-w-sm mx-auto border border-gray-600">
-            <h2 class="text-3xl font-bold text-white mb-6 text-center">Create Your Account</h2>
-            <p class="text-gray-400 text-sm mb-6 text-center">
-                This account is local to your device. Your Master Password encrypts everything.
-                <span class="font-bold text-yellow-300">There is no recovery if forgotten!</span>
-            </p>
+        <div class="max-w-md mx-auto p-8 bg-gray-800 rounded-lg shadow-xl text-white">
+            <h2 class="text-3xl font-bold mb-6 text-center">Register New Account</h2>
             <form id="register-form" class="space-y-4">
                 <div>
-                    <label for="reg-username" class="block text-gray-300 text-sm font-semibold mb-2 text-left">Username:</label>
-                    <input type="text" id="reg-username" name="username"
-                           class="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500
-                                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="Choose a username" required minlength="3">
+                    <label for="reg-username" class="block text-sm font-medium text-gray-300">Username</label>
+                    <input type="text" id="reg-username" name="username" required
+                           class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
                 </div>
                 <div>
-                    <label for="reg-password" class="block text-gray-300 text-sm font-semibold mb-2 text-left">Master Password:</label>
-                    <input type="password" id="reg-password" name="password"
-                           class="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500
-                                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="Enter a strong master password" required minlength="8">
-                </div>
-                <div>
-                    <label for="reg-confirm-password" class="block text-gray-300 text-sm font-semibold mb-2 text-left">Confirm Master Password:</label>
-                    <input type="password" id="reg-confirm-password" name="confirmPassword"
-                           class="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500
-                                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="Confirm your master password" required minlength="8">
+                    <label for="reg-password" class="block text-sm font-medium text-gray-300">Master Password</label>
+                    <input type="password" id="reg-password" name="password" required
+                           class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
+                    <p class="mt-1 text-sm text-gray-400">Min 8 characters. This password encrypts all your data.</p>
                 </div>
                 <button type="submit"
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg
-                               shadow-md transition duration-300 ease-in-out transform hover:scale-105
-                               focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50 mt-4">
-                    Register & Begin Journaling
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Register
                 </button>
             </form>
-            <div class="mt-6 text-center text-sm text-gray-400">
-                Already have an account? <a href="#" id="show-login" class="text-blue-400 hover:text-blue-300 font-semibold transition duration-200">Log In</a>
-            </div>
-            <div class="mt-4 text-center text-sm text-gray-400">
-                Or, <a href="#" id="show-import-register" class="text-yellow-400 hover:text-yellow-300 font-semibold transition duration-200">Import Existing Data</a>
-            </div>
+            <p class="mt-6 text-center text-gray-400">
+                Already have an account? <a href="#" id="show-login-link" class="font-medium text-indigo-400 hover:text-indigo-300">Login here</a>
+            </p>
         </div>
     `;
 
-    // Event listeners
     document.getElementById('register-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const username = document.getElementById('reg-username').value;
         const password = document.getElementById('reg-password').value;
-        const confirmPassword = document.getElementById('reg-confirm-password').value;
-
-        if (password !== confirmPassword) {
-            displayMessage('Passwords do not match.', 'text-red-400 bg-red-800');
-            return;
-        }
-
-        // Basic password strength check (can be expanded)
-        if (password.length < 8) {
-            displayMessage('Master Password must be at least 8 characters long.', 'text-red-400 bg-red-800');
-            return;
-        }
-
-        displayMessage('Registering user...', 'text-blue-300');
-        try {
-            await registerUser(username, password);
-            displayMessage('Registration successful! Redirecting to journal...', 'text-green-400 bg-green-800');
-            // TODO: Redirect to main journal view
-            console.log('User registered. Next: show main journal app.');
-            renderMainJournalApp(container, username); // Temporary redirect to journal app
-        } catch (error) {
-            console.error('Registration error:', error);
-            displayMessage(`Registration failed: ${error.message}`, 'text-red-400 bg-red-800');
+        const success = await auth.registerUser(username, password);
+        if (success) {
+            // UI update handled by registerUser -> renderMainJournalApp
         }
     });
 
-    document.getElementById('show-login').addEventListener('click', (e) => {
+    document.getElementById('show-login-link').addEventListener('click', (e) => {
         e.preventDefault();
         renderLoginForm(container);
-    });
-
-    document.getElementById('show-import-register').addEventListener('click', (e) => {
-        e.preventDefault();
-        renderImportForm(container); // Will be created later
     });
 }
 
 /**
- * Renders the user login form into the specified container.
- * @param {HTMLElement} container The DOM element where the form should be rendered.
+ * Renders the login form.
+ * @param {HTMLElement} container The DOM element to render the form into.
  */
 export function renderLoginForm(container) {
     container.innerHTML = `
-        <div class="bg-gray-700 p-8 rounded-xl shadow-lg w-full max-w-sm mx-auto border border-gray-600">
-            <h2 class="text-3xl font-bold text-white mb-6 text-center">Welcome Back</h2>
-            <p class="text-gray-400 text-sm mb-6 text-center">
-                Enter your Master Password to decrypt and access your journal.
-            </p>
+        <div class="max-w-md mx-auto p-8 bg-gray-800 rounded-lg shadow-xl text-white">
+            <h2 class="text-3xl font-bold mb-6 text-center">Login to WebX Journal</h2>
             <form id="login-form" class="space-y-4">
                 <div>
-                    <label for="login-username" class="block text-gray-300 text-sm font-semibold mb-2 text-left">Username:</label>
-                    <input type="text" id="login-username" name="username"
-                           class="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500
-                                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="Your username" required minlength="3">
+                    <label for="login-username" class="block text-sm font-medium text-gray-300">Username</label>
+                    <input type="text" id="login-username" name="username" required
+                           class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
                 </div>
                 <div>
-                    <label for="login-password" class="block text-gray-300 text-sm font-semibold mb-2 text-left">Master Password:</label>
-                    <input type="password" id="login-password" name="password"
-                           class="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500
-                                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="Your master password" required minlength="8">
+                    <label for="login-password" class="block text-sm font-medium text-gray-300">Master Password</label>
+                    <input type="password" id="login-password" name="password" required
+                           class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
                 </div>
                 <button type="submit"
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg
-                               shadow-md transition duration-300 ease-in-out transform hover:scale-105
-                               focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50 mt-4">
-                    Unlock Journal
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Login
                 </button>
             </form>
-            <div class="mt-6 text-center text-sm text-gray-400">
-                New user? <a href="#" id="show-register" class="text-blue-400 hover:text-blue-300 font-semibold transition duration-200">Create Account</a>
-            </div>
-            <div class="mt-4 text-center text-sm text-gray-400">
-                Or, <a href="#" id="show-import-login" class="text-yellow-400 hover:text-yellow-300 font-semibold transition duration-200">Import Existing Data</a>
-            </div>
+            <p class="mt-6 text-center text-gray-400">
+                Don't have an account? <a href="#" id="show-register-link" class="font-medium text-indigo-400 hover:text-indigo-300">Register now</a>
+            </p>
         </div>
     `;
 
-    // Event listeners
     document.getElementById('login-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const username = document.getElementById('login-username').value;
         const password = document.getElementById('login-password').value;
-
-        displayMessage('Attempting login...', 'text-blue-300');
-        try {
-            await loginUser(username, password);
-            displayMessage('Login successful! Redirecting to journal...', 'text-green-400 bg-green-800');
-            // TODO: Redirect to main journal view
-            console.log('User logged in. Next: show main journal app.');
-            renderMainJournalApp(container, username); // Temporary redirect
-        } catch (error) {
-            console.error('Login error:', error);
-            displayMessage(`Login failed: ${error.message}`, 'text-red-400 bg-red-800');
-        }
+        await auth.loginUser(username, password);
     });
 
-    document.getElementById('show-register').addEventListener('click', (e) => {
+    document.getElementById('show-register-link').addEventListener('click', (e) => {
         e.preventDefault();
         renderRegisterForm(container);
     });
-
-    document.getElementById('show-import-login').addEventListener('click', (e) => {
-        e.preventDefault();
-        renderImportForm(container); // Will be created later
-    });
 }
 
-
 /**
- * Renders a placeholder for the main journal application content.
- * This function will be expanded significantly in future steps.
- * @param {HTMLElement} container The DOM element where the app should be rendered.
- * @param {string} username The username of the currently logged-in user.
+ * Renders the main journal application interface after successful login/registration.
+ * @param {HTMLElement} container The DOM element to render the app into.
+ * @param {string} username The username of the logged-in user.
  */
 export function renderMainJournalApp(container, username) {
     container.innerHTML = `
-        <div class="bg-gray-700 p-8 rounded-xl shadow-lg w-full mx-auto border border-gray-600">
-            <h2 class="text-3xl font-bold text-white mb-6 text-center">Hello, ${username}!</h2>
-            <p class="text-gray-400 text-sm mb-6 text-center">
-                Welcome to your private WebX Journal. This is where your entries will appear.
-            </p>
-            <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
-                <button id="create-entry-button"
-                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg
-                               shadow-md transition duration-300 ease-in-out transform hover:scale-105
-                               focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50">
-                    Create New Entry
-                </button>
-                <button id="export-data-button"
-                        class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg
-                               shadow-md transition duration-300 ease-in-out transform hover:scale-105
-                               focus:outline-none focus:ring-4 focus:ring-purple-500 focus:ring-opacity-50">
-                    Export Data (.webx)
-                </button>
-                <button id="logout-button"
-                        class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg
-                               shadow-md transition duration-300 ease-in-out transform hover:scale-105
-                               focus:outline-none focus:ring-4 focus:ring-red-500 focus:ring-opacity-50">
-                    Logout
-                </button>
-            </div>
+        <div class="flex flex-col h-screen bg-gray-900 text-gray-100">
+            <header class="bg-gray-800 p-4 shadow-md flex justify-between items-center">
+                <h1 class="text-2xl font-bold">WebX Journal</h1>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-400">Logged in as: <span class="font-semibold text-white">${username}</span></span>
+                    <button id="logout-button" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm">Logout</button>
+                    <button id="export-button" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-sm">Export Data</button>
+                    <label for="import-file-input" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md text-sm cursor-pointer">
+                        Import Data
+                    </label>
+                    <input type="file" id="import-file-input" accept=".webx, application/json" class="hidden">
+                    <button id="delete-account-button" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-md text-sm">Delete Account</button>
+                </div>
+            </header>
 
-            <div id="journal-entries-list" class="mt-8 text-left space-y-4">
-                <p class="text-gray-500">Your journal entries will be listed here...</p>
-                <!-- Journal entries will be dynamically loaded here -->
-            </div>
+            <main class="flex flex-1 overflow-hidden">
+                <section class="w-full lg:w-1/3 p-4 border-r border-gray-700 overflow-y-auto">
+                    <h2 class="text-xl font-semibold mb-4">New Journal Entry</h2>
+                    <form id="journal-entry-form" class="space-y-4">
+                        <div>
+                            <label for="journal-entry-title" class="block text-sm font-medium text-gray-300">Title</label>
+                            <input type="text" id="journal-entry-title" required
+                                   class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
+                        </div>
+                        <div>
+                            <label for="journal-entry-content" class="block text-sm font-medium text-gray-300">Content</label>
+                            <textarea id="journal-entry-content" rows="10" required
+                                      class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100"></textarea>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button type="submit" id="save-entry-button"
+                                    class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                Save Entry
+                            </button>
+                            <button type="button" id="clear-form-button"
+                                    class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-gray-800 bg-gray-300 hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                                Clear Form
+                            </button>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="w-full lg:w-2/3 p-4 overflow-y-auto">
+                    <h2 class="text-xl font-semibold mb-4">Your Entries</h2>
+                    <div id="journal-entries-list" class="space-y-4">
+                        </div>
+                </section>
+            </main>
         </div>
     `;
 
-    // Event Listeners for main app buttons
-    document.getElementById('create-entry-button').addEventListener('click', () => {
-        displayMessage('Create New Entry functionality coming soon!', 'text-yellow-300');
-        // TODO: Implement journal entry creation form
-    });
+    // Cache element references after rendering
+    journalEntryForm = document.getElementById('journal-entry-form');
+    journalEntryTitleInput = document.getElementById('journal-entry-title');
+    journalEntryContentInput = document.getElementById('journal-entry-content');
 
-    document.getElementById('export-data-button').addEventListener('click', () => {
-        displayMessage('Export Data functionality coming soon!', 'text-yellow-300');
-        // TODO: Implement data export logic
-    });
-
+    // Attach event listeners
     document.getElementById('logout-button').addEventListener('click', () => {
-        // Simple logout for now, will be more robust with session management
-        displayMessage('Logging out...', 'text-blue-300');
-        // Clear local session state (will be enhanced)
-        // For now, simply reload to go back to login/register flow
-        window.location.reload();
+        auth.logoutUser();
+        renderLoginForm(container); // Go back to login screen
+        utils.displayMessage('You have been logged out.', 'text-blue-300 bg-gray-700');
     });
-}
 
-/**
- * Renders the import data form into the specified container.
- * This form allows users to upload a .webx backup file.
- * @param {HTMLElement} container The DOM element where the form should be rendered.
- */
-export function renderImportForm(container) {
-    container.innerHTML = `
-        <div class="bg-gray-700 p-8 rounded-xl shadow-lg w-full max-w-sm mx-auto border border-gray-600">
-            <h2 class="text-3xl font-bold text-white mb-6 text-center">Import Journal Data</h2>
-            <p class="text-gray-400 text-sm mb-6 text-center">
-                Upload your encrypted `.webx` backup file and enter your Master Password.
-            </p>
-            <form id="import-form" class="space-y-4">
-                <div>
-                    <label for="import-file" class="block text-gray-300 text-sm font-semibold mb-2 text-left">Select .webx File:</label>
-                    <input type="file" id="import-file" name="importFile" accept=".webx"
-                           class="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500
-                                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-                           required>
-                </div>
-                <div>
-                    <label for="import-password" class="block text-gray-300 text-sm font-semibold mb-2 text-left">Master Password:</label>
-                    <input type="password" id="import-password" name="masterPassword"
-                           class="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500
-                                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="Enter master password for the backup" required minlength="8">
-                </div>
-                <button type="submit"
-                        class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-4 rounded-lg
-                               shadow-md transition duration-300 ease-in-out transform hover:scale-105
-                               focus:outline-none focus:ring-4 focus:ring-yellow-500 focus:ring-opacity-50 mt-4">
-                    Import Data
-                </button>
-            </form>
-            <div class="mt-6 text-center text-sm text-gray-400">
-                Go back to <a href="#" id="back-to-auth" class="text-blue-400 hover:text-blue-300 font-semibold transition duration-200">Login/Register</a>
-            </div>
-        </div>
-    `;
+    document.getElementById('export-button').addEventListener('click', main.exportJournalData);
 
-    // Event listeners
-    document.getElementById('import-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const fileInput = document.getElementById('import-file');
-        const masterPassword = document.getElementById('import-password').value;
+    const importFileInput = document.getElementById('import-file-input');
+    importFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const password = prompt('Enter the master password for the backup file:');
+            if (password) {
+                await main.importJournalData(file, password);
+                importFileInput.value = ''; // Clear file input
+            } else {
+                utils.displayMessage('Import cancelled: Master password not provided.', 'text-red-400 bg-red-800');
+            }
+        }
+    });
 
-        if (fileInput.files.length === 0) {
-            displayMessage('Please select a .webx backup file.', 'text-red-400 bg-red-800');
+    document.getElementById('delete-account-button').addEventListener('click', async () => {
+        const username = auth.getCurrentUsername();
+        if (!username) {
+            utils.displayMessage('No user is currently logged in.', 'text-red-400 bg-red-800');
             return;
         }
-
-        const file = fileInput.files[0];
-        displayMessage('Importing data...', 'text-blue-300');
-
-        try {
-            // TODO: Implement the actual import logic using crypto and storage modules
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                try {
-                    const encryptedBackupJson = event.target.result;
-                    // For now, just log the content, actual decryption/import will come later
-                    console.log('Encrypted backup content (raw):', encryptedBackupJson);
-                    // This is where you'd call a function like `importEncryptedBackup(encryptedBackupJson, masterPassword)`
-                    displayMessage('Backup file read. Decryption and data import logic coming soon!', 'text-yellow-300');
-                    // After successful import, potentially redirect to the journal app
-                    // renderMainJournalApp(container, "Imported User"); // Placeholder
-                } catch (readError) {
-                    displayMessage(`Error reading file: ${readError.message}`, 'text-red-400 bg-red-800');
-                    console.error('File read error:', readError);
-                }
-            };
-            reader.readAsText(file); // Read as text, assuming it's encrypted JSON string
-
-        } catch (error) {
-            console.error('Import process error:', error);
-            displayMessage(`Import failed: ${error.message}`, 'text-red-400 bg-red-800');
-        }
-    });
-
-    document.getElementById('back-to-auth').addEventListener('click', async (e) => {
-        e.preventDefault();
-        // Check if a profile exists and show appropriate form
-        const appContentContainer = document.getElementById('app-content-container');
-        const { getAuthStatus } = await import('./auth.js'); // Dynamically import to avoid circular dependency issues if auth.js uses ui.js
-        const authStatus = await getAuthStatus();
-        if (authStatus.isRegistered) {
-            renderLoginForm(appContentContainer);
+        const masterPassword = prompt(`To confirm account deletion for "${username}", please enter your master password:`);
+        if (masterPassword) {
+            await auth.deleteAccount(username, masterPassword);
         } else {
-            renderRegisterForm(appContentContainer);
+            utils.displayMessage('Account deletion cancelled: Master password not provided.', 'text-blue-300 bg-gray-700');
         }
     });
-}
 
+    journalEntryForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const title = journalEntryTitleInput.value;
+        const content = journalEntryContentInput.value;
+        await main.saveJournalEntry(currentEditingEntryId, title, content);
+        currentEditingEntryId = null; // Clear editing state after save
+        document.getElementById('save-entry-button').textContent = 'Save Entry';
+    });
+
+    document.getElementById('clear-form-button').addEventListener('click', () => {
+        journalEntryForm.reset();
+        currentEditingEntryId = null;
+        document.getElementById('save-entry-button').textContent = 'Save Entry';
+        journalEntryTitleInput.value = '';
+        journalEntryContentInput.value = '';
+        utils.displayMessage('Form cleared.', 'text-blue-300 bg-gray-700');
+    });
+
+    // Load existing entries after rendering the main app
+    main.loadJournalEntries();
+}
 
 /**
- * Displays a message to the user in the designated app-message area.
- * @param {string} message The message text to display.
- * @param {string} [classes='text-gray-300'] Tailwind CSS classes for styling the message.
+ * Renders a single journal entry into the list.
+ * @param {object} entry The journal entry object.
+ * @param {string} entry.id
+ * @param {number} entry.timestamp
+ * @param {string} entry.title
+ * @param {string} entry.content
+ * @param {boolean} [entry.isCorrupted=false] If true, indicates decryption failed.
  */
-export function displayMessage(message, classes = 'text-gray-300') {
-    const messageContainer = document.getElementById('app-message');
-    if (messageContainer) {
-        messageContainer.textContent = message;
-        messageContainer.className = `mt-4 p-3 rounded-lg text-center ${classes}`;
-        messageContainer.classList.remove('hidden');
-        // Optional: Hide message after a few seconds
-        setTimeout(() => {
-            if (messageContainer.textContent === message) { // Only hide if it's still the same message
-                 messageContainer.classList.add('hidden');
-            }
-        }, 5000); // Hide after 5 seconds
-    } else {
-        console.warn('App message container not found. Message:', message);
+export function renderJournalEntry(entry) {
+    const journalList = document.getElementById('journal-entries-list');
+    if (!journalList) {
+        console.error('Journal entries list not found.');
+        return;
     }
+
+    const entryElement = document.createElement('div');
+    entryElement.id = `entry-${entry.id}`;
+    entryElement.className = `journal-entry-item bg-gray-800 p-4 rounded-lg shadow-md transition-all duration-200 ease-in-out ${entry.isCorrupted ? 'border-l-4 border-red-500' : 'border-l-4 border-indigo-500'}`;
+
+    const date = new Date(entry.timestamp);
+    const formattedDate = date.toLocaleString(); // Adjust as needed for specific format
+
+    entryElement.innerHTML = `
+        <h3 class="text-xl font-semibold mb-2 text-indigo-300">${utils.escapeHTML(entry.title)}</h3>
+        <p class="text-sm text-gray-400 mb-3">${formattedDate}</p>
+        <div class="journal-content-preview text-gray-300 mb-4 overflow-hidden max-h-24 leading-relaxed">${utils.escapeHTML(entry.content)}</div>
+        ${entry.isCorrupted ? '<p class="text-red-400 font-bold">This entry could not be decrypted.</p>' : ''}
+        <div class="flex space-x-2">
+            <button class="view-entry-button bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-md text-sm">View Full</button>
+            <button class="edit-entry-button bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded-md text-sm" data-id="${entry.id}">Edit</button>
+            <button class="delete-entry-button bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm" data-id="${entry.id}">Delete</button>
+        </div>
+    `;
+
+    // Add event listeners for buttons
+    entryElement.querySelector('.view-entry-button').addEventListener('click', () => {
+        // Simple modal or alert for full view
+        alert(`Title: ${entry.title}\n\nDate: ${formattedDate}\n\nContent:\n${entry.content}`);
+    });
+
+    entryElement.querySelector('.edit-entry-button').addEventListener('click', () => {
+        // Populate the form for editing
+        journalEntryTitleInput.value = entry.title;
+        journalEntryContentInput.value = entry.content;
+        currentEditingEntryId = entry.id; // Set the ID of the entry being edited
+        document.getElementById('save-entry-button').textContent = 'Update Entry';
+        journalEntryTitleInput.focus();
+        utils.displayMessage(`Editing entry: "${entry.title}"`, 'text-blue-300 bg-gray-700');
+    });
+
+    entryElement.querySelector('.delete-entry-button').addEventListener('click', async () => {
+        if (confirm(`Are you sure you want to delete "${entry.title}"?`)) {
+            await main.deleteJournalEntry(entry.id);
+        }
+    });
+
+    // Insert new entries at the top of the list
+    journalList.prepend(entryElement);
+    utils.displayMessage('Entry added to list.', 'hidden'); // Silently add
 }
 
-// Ensure utility functions are accessible
-export { displayMessage };
+/**
+ * Updates an existing journal entry's display in the list.
+ * @param {object} updatedEntry The updated journal entry object.
+ * @param {string} updatedEntry.id
+ * @param {number} updatedEntry.timestamp
+ * @param {string} updatedEntry.title
+ * @param {string} updatedEntry.content
+ */
+export function updateJournalEntryInList(updatedEntry) {
+    const existingElement = document.getElementById(`entry-${updatedEntry.id}`);
+    if (existingElement) {
+        // Remove the old element
+        existingElement.remove();
+    }
+    // Re-render the entry, which will add it to the top
+    renderJournalEntry(updatedEntry);
+    utils.displayMessage('Entry updated in list.', 'hidden'); // Silently update
+}
+
+/**
+ * Removes a journal entry from the display list.
+ * @param {string} id The ID of the entry to remove.
+ */
+export function removeJournalEntryFromList(id) {
+    const entryElement = document.getElementById(`entry-${id}`);
+    if (entryElement) {
+        entryElement.remove();
+    }
+    utils.displayMessage('Entry removed from list.', 'hidden'); // Silently remove
+}
