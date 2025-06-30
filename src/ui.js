@@ -6,13 +6,21 @@
  */
 
 import * as auth from './auth.js';
-// Removed: import * as main from './main.js'; // No longer directly importing main.js
 import * as utils from './utils.js'; // For utility functions like displayMessage
 
 // CurrentEditingEntryId and mainJournalApp methods will now communicate via window.WebXJournal
 let currentEditingEntryId = null; // To store the ID of the entry being edited
 
-// --- Global UI Elements ---
+// --- Global UI Elements (now including form inputs and session timer) ---
+let journalEntryTitleInput;   // Declared globally
+let journalEntryContentInput; // Declared globally
+let sessionTimerInterval;
+let sessionTimeoutId; // For the inactivity timeout
+
+const SESSION_DURATION_SECONDS = 1800; // 30 minutes for demonstration
+let timeLeft = SESSION_DURATION_SECONDS;
+
+
 const loadingOverlay = document.createElement('div');
 loadingOverlay.id = 'loading-overlay';
 loadingOverlay.className = 'fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden';
@@ -74,16 +82,16 @@ export function renderRegisterForm(container) {
                 <div>
                     <label for="reg-username" class="block text-sm font-medium text-gray-300">Username</label>
                     <input type="text" id="reg-username" name="username" required
-                           class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
+                            class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
                 </div>
                 <div>
                     <label for="reg-password" class="block text-sm font-medium text-gray-300">Master Password</label>
                     <input type="password" id="reg-password" name="password" required
-                           class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
+                            class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
                     <p class="mt-1 text-sm text-gray-400">Min 8 characters. This password encrypts all your data.</p>
                 </div>
                 <button type="submit"
-                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                         class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                     Register
                 </button>
             </form>
@@ -122,15 +130,15 @@ export function renderLoginForm(container) {
                 <div>
                     <label for="login-username" class="block text-sm font-medium text-gray-300">Username</label>
                     <input type="text" id="login-username" name="username" required
-                           class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
+                            class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
                 </div>
                 <div>
                     <label for="login-password" class="block text-sm font-medium text-gray-300">Master Password</label>
                     <input type="password" id="login-password" name="password" required
-                           class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
+                            class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
                 </div>
                 <button type="submit"
-                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                         class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                     Login
                 </button>
             </form>
@@ -166,6 +174,7 @@ export function renderMainJournalApp(container, username) {
                 <h1 class="text-2xl font-bold">WebX Journal</h1>
                 <div class="flex items-center space-x-4">
                     <span class="text-gray-400">Logged in as: <span class="font-semibold text-white">${username}</span></span>
+                    <span id="session-timer" class="text-gray-400 text-sm">Session: --:--</span>
                     <button id="logout-button" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm">Logout</button>
                     <button id="export-button" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-sm">Export Data</button>
                     <label for="import-file-input" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md text-sm cursor-pointer">
@@ -183,20 +192,20 @@ export function renderMainJournalApp(container, username) {
                         <div>
                             <label for="journal-entry-title" class="block text-sm font-medium text-gray-300">Title</label>
                             <input type="text" id="journal-entry-title" required
-                                   class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
+                                    class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100">
                         </div>
                         <div>
                             <label for="journal-entry-content" class="block text-sm font-medium text-gray-300">Content</label>
                             <textarea id="journal-entry-content" rows="10" required
-                                      class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100"></textarea>
+                                     class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-100"></textarea>
                         </div>
                         <div class="flex space-x-2">
                             <button type="submit" id="save-entry-button"
-                                    class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                     class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                 Save Entry
                             </button>
                             <button type="button" id="clear-form-button"
-                                    class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-gray-800 bg-gray-300 hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                                     class="flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-gray-800 bg-gray-300 hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
                                 Clear Form
                             </button>
                         </div>
@@ -213,10 +222,10 @@ export function renderMainJournalApp(container, username) {
     `;
     utils.initializeMessageContainer(messageContainer); // Initialize message container for this view
 
-    // Cache element references after rendering
-    const journalEntryForm = document.getElementById('journal-entry-form');
-    const journalEntryTitleInput = document.getElementById('journal-entry-title');
-    const journalEntryContentInput = document.getElementById('journal-entry-content');
+    // Assign global element references after rendering
+    const journalEntryForm = document.getElementById('journal-entry-form'); // This is still local but used once
+    journalEntryTitleInput = document.getElementById('journal-entry-title');   // Assign to global variable
+    journalEntryContentInput = document.getElementById('journal-entry-content'); // Assign to global variable
 
     // Set default journal entry title
     journalEntryTitleInput.value = getDefaultJournalTitle();
@@ -226,6 +235,7 @@ export function renderMainJournalApp(container, username) {
         auth.logoutUser();
         renderLoginForm(container); // Go back to login screen
         utils.displayMessage('You have been logged out.', 'text-blue-300 bg-gray-700');
+        stopSessionTimer(); // Stop timer on logout
     });
 
     document.getElementById('export-button').addEventListener('click', window.WebXJournal.exportJournalData);
@@ -262,7 +272,6 @@ export function renderMainJournalApp(container, username) {
         e.preventDefault();
         const title = journalEntryTitleInput.value;
         const content = journalEntryContentInput.value;
-        // THIS LINE IS THE FIX:
         await window.WebXJournal.saveJournalEntry(currentEditingEntryId, title, content);
         currentEditingEntryId = null; // Clear editing state after save
         document.getElementById('save-entry-button').textContent = 'Save Entry';
@@ -281,10 +290,93 @@ export function renderMainJournalApp(container, username) {
         utils.displayMessage('Form cleared.', 'text-blue-300 bg-gray-700');
     });
 
+    // Start session timer when main app is rendered
+    startSessionTimer();
+
     // Load existing entries after rendering the main app
-    // IMPORTANT: This call now correctly uses window.WebXJournal
     window.WebXJournal.loadJournalEntries();
 }
+
+/**
+ * Starts the session timer and sets up inactivity logout.
+ */
+function startSessionTimer() {
+    // Clear any existing timers
+    clearInterval(sessionTimerInterval);
+    clearTimeout(sessionTimeoutId);
+
+    timeLeft = SESSION_DURATION_SECONDS; // Reset time
+    const sessionTimerElement = document.getElementById('session-timer');
+
+    // Update timer display every second
+    sessionTimerInterval = setInterval(() => {
+        if (timeLeft > 0) {
+            timeLeft--;
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            if (sessionTimerElement) {
+                sessionTimerElement.textContent = `Session: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            }
+        } else {
+            clearInterval(sessionTimerInterval);
+            if (auth.getAuthStatus().isLoggedIn) { // Only logout if still logged in
+                auth.logoutUser();
+                renderLoginForm(document.getElementById('app-content-container'));
+                utils.displayMessage('Session timed out. Please log in again.', 'text-red-400 bg-red-800');
+            }
+        }
+    }, 1000);
+
+    // Set up inactivity reset
+    resetSessionTimeout();
+
+    // Add activity listeners to reset timeout
+    document.addEventListener('mousemove', resetSessionTimeout);
+    document.addEventListener('keydown', resetSessionTimeout);
+    document.addEventListener('click', resetSessionTimeout);
+    document.addEventListener('scroll', resetSessionTimeout);
+}
+
+/**
+ * Resets the inactivity timeout, extending the session.
+ */
+function resetSessionTimeout() {
+    clearTimeout(sessionTimeoutId);
+    sessionTimeoutId = setTimeout(() => {
+        // If the timer is still running and no activity for a while, trigger logout
+        if (timeLeft > 0 && auth.getAuthStatus().isLoggedIn) {
+            clearInterval(sessionTimerInterval); // Stop the display timer
+            auth.logoutUser();
+            renderLoginForm(document.getElementById('app-content-container'));
+            utils.displayMessage('You were logged out due to inactivity.', 'text-red-400 bg-red-800');
+        }
+    }, (SESSION_DURATION_SECONDS + 5) * 1000); // Give a small buffer (5 seconds) after display runs out
+    
+    // Also reset the display timer if activity happens before session ends
+    if (timeLeft <= 0) { // If session already timed out, restart it
+        startSessionTimer();
+    } else { // If still active, just reset the countdown for display
+        timeLeft = SESSION_DURATION_SECONDS;
+    }
+}
+
+/**
+ * Stops the session timer. Call this on logout.
+ */
+function stopSessionTimer() {
+    clearInterval(sessionTimerInterval);
+    clearTimeout(sessionTimeoutId);
+    const sessionTimerElement = document.getElementById('session-timer');
+    if (sessionTimerElement) {
+        sessionTimerElement.textContent = 'Session: --:--';
+    }
+    // Remove activity listeners to prevent memory leaks if app state changes significantly
+    document.removeEventListener('mousemove', resetSessionTimeout);
+    document.removeEventListener('keydown', resetSessionTimeout);
+    document.removeEventListener('click', resetSessionTimeout);
+    document.removeEventListener('scroll', resetSessionTimeout);
+}
+
 
 /**
  * Renders a single journal entry into the list.
@@ -329,6 +421,7 @@ export function renderJournalEntry(entry) {
 
     entryElement.querySelector('.edit-entry-button').addEventListener('click', () => {
         // Populate the form for editing
+        // These now refer to the globally declared variables
         journalEntryTitleInput.value = entry.title;
         journalEntryContentInput.value = entry.content;
         currentEditingEntryId = entry.id; // Set the ID of the entry being edited
