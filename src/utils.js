@@ -6,7 +6,6 @@
  */
 
 // A simple global container for messages (populated by ui.js)
-// This is accessed directly by displayMessage to ensure messages appear consistently.
 let globalMessageContainer = null;
 
 /**
