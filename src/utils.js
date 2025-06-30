@@ -1,80 +1,65 @@
 // src/utils.js
 
-/**
- * @fileoverview Utility functions for WebX Journal, including message display
- * and unique ID generation.
- */
+const MESSAGE_TIMEOUT = 5000; // Messages disappear after 5 seconds
+let messageTimer = null; // To clear previous timers
 
-// A simple global container for messages (populated by ui.js)
-let globalMessageContainer = null;
-
-/**
- * Initializes the global message container. This should be called once,
- * preferably by ui.js when the main app structure is rendered.
- * @param {HTMLElement} container The DOM element designated for messages.
- */
-export function initializeMessageContainer(container) {
-    globalMessageContainer = container;
+// Function to convert a string to Uint8Array (useful for crypto operations)
+export function stringToUint8Array(str) {
+    return new TextEncoder().encode(str);
 }
 
-/**
- * Displays a temporary message to the user.
- * @param {string} message The message content.
- * @param {string} typeClasses CSS classes for styling the message (e.g., 'bg-green-500', 'text-red-400').
- * @param {string} [targetElementId] Optional ID of an element to append the message to, instead of the global container.
- * Useful for contextual messages within a specific UI component.
- */
-export function displayMessage(message, typeClasses = 'text-gray-100 bg-gray-700', targetElementId = null) {
-    let container = globalMessageContainer;
+// Function to convert Uint8Array to string
+export function uint8ArrayToString(arr) {
+    return new TextDecoder().decode(arr);
+}
 
-    if (targetElementId) {
-        const specificTarget = document.getElementById(targetElementId);
-        if (specificTarget) {
-            container = specificTarget;
-        } else {
-            console.warn(`Target element with ID '${targetElementId}' not found for message.`);
-            // Fallback to global container if specific target not found
-        }
-    }
+// Function to convert Uint8Array to Base64 string
+export function uint8ArrayToBase64(arr) {
+    return btoa(String.fromCharCode.apply(null, arr));
+}
 
-    if (!container) {
-        console.warn('Message container not initialized. Message will be logged only:', message);
-        console.log(`Message: ${message} (Type: ${typeClasses})`);
+// Function to convert Base64 string to Uint8Array
+export function base64ToUint8Array(str) {
+    return new Uint8Array(atob(str).split('').map(char => char.charCodeAt(0)));
+}
+
+// Function to display messages to the user (e.g., success, error, info)
+export function displayMessage(message, type = 'text-blue-300 bg-gray-700') {
+    const messageContainer = document.getElementById('message-container');
+
+    // If the message container doesn't exist, log to console as a fallback
+    // This is for scenarios where the UI might not be fully loaded or has been replaced.
+    if (!messageContainer) {
+        console.warn("Message container not initialized. Message will be logged only:", message);
+        console.log(`Message: ${message} (Type: ${type})`);
         return;
     }
 
-    const messageElement = document.createElement('div');
-    messageElement.className = `p-3 rounded-md shadow-lg mb-2 text-sm transition-all duration-300 ease-out transform translate-x-0 opacity-100 ${typeClasses}`;
-    messageElement.textContent = message;
+    // Clear any previous timer to ensure the new message is displayed for the full duration
+    if (messageTimer) {
+        clearTimeout(messageTimer);
+    }
 
-    // Add a fade-out animation and then remove
-    setTimeout(() => {
-        messageElement.classList.add('opacity-0', 'translate-x-full');
-        messageElement.addEventListener('transitionend', () => {
-            messageElement.remove();
-        });
-    }, 5000); // Message visible for 5 seconds
+    messageContainer.textContent = message;
+    messageContainer.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-500 ${type}`;
+    messageContainer.style.opacity = '1';
+    messageContainer.style.pointerEvents = 'auto'; // Make it clickable/visible
 
-    // Prepend to show newest messages at the top
-    container.prepend(messageElement);
+    // Set a timer to hide the message after MESSAGE_TIMEOUT
+    messageTimer = setTimeout(() => {
+        messageContainer.style.opacity = '0';
+        messageContainer.style.pointerEvents = 'none'; // Make it non-clickable
+        // Optional: clear text content after transition to prevent lingering
+        setTimeout(() => messageContainer.textContent = '', 500); // Wait for fade out
+    }, MESSAGE_TIMEOUT);
 }
 
-/**
- * Generates a simple unique ID using timestamp and a random number.
- * Not cryptographically secure, but sufficient for local IndexedDB keys.
- * @returns {string} A unique ID string.
- */
-export function generateUniqueId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
-}
-
-/**
- * Escapes HTML to prevent XSS attacks when displaying user-generated content.
- * @param {string} text The text to escape.
- * @returns {string} The HTML-escaped string.
- */
-export function escapeHTML(text) {
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(text));
-    return div.innerHTML;
+// Function to set up a debounced input listener
+export function debounce(func, delay) {
+    let timeout;
+    return function(...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), delay);
+    };
 }
