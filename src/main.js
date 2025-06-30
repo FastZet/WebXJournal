@@ -31,6 +31,7 @@ async function initializeJournalApp() {
         // --- FIX: Initialize IndexedDB BEFORE anything else tries to access it ---
         await storage.initializeIndexedDB(); // This line is crucial!
         console.log('IndexedDB initialized.'); // Confirmation log
+        Force cache refresh: June 30, 2025 - V1 // <--- ADD THIS LINE
 
         ui.showLoadingOverlay('Checking authentication...');
         const authStatus = await auth.getAuthStatus();
