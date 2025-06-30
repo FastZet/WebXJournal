@@ -4,45 +4,75 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebX Journal</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/png" href="favicon.png"> <link href="output.css" rel="stylesheet">
     <style>
-        /* Optional: Custom styles or overrides */
+        /* Custom styles for background and centering the content on the initial landing page */
         body {
-            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-            background-color: #0d1117; /* Dark background */
-            color: #c9d1d9; /* Light text color */
+            /* Using a subtle dark gradient for the background */
+            background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+            display: flex; /* Use flexbox for centering */
+            justify-content: center; /* Center horizontally */
+            align-items: center; /* Center vertically */
+            min-height: 100vh; /* Ensure body takes full viewport height */
+            margin: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; /* Tailwind's default sans font stack */
+            color: #e2e8f0; /* Default text color for the background elements */
         }
-        /* Basic loader for the loading overlay */
-        .loader {
-            border-top-color: #3498db;
-            -webkit-animation: spinner 1.5s linear infinite;
-            animation: spinner 1.5s linear infinite;
+        /* Wrapper for the introduction and the form to control their layout */
+        .intro-container {
+            display: flex;
+            gap: 3rem; /* Space between the introduction text and the form box */
+            align-items: center; /* Vertically align items in the flex container */
+            justify-content: center; /* Center horizontally within its space */
+            flex-wrap: wrap; /* Allow items to wrap on smaller screens */
+            max-width: 1200px; /* Maximum width of the entire content area */
+            padding: 2rem; /* Padding around the container */
+            box-sizing: border-box; /* Include padding in element's total width and height */
         }
-        @-webkit-keyframes spinner {
-            0% { -webkit-transform: rotate(0deg); }
-            100% { -webkit-transform: rotate(360deg); }
+        /* Styling for the application introduction text */
+        .app-introduction {
+            flex: 1; /* Allow it to grow and shrink */
+            min-width: 300px; /* Minimum width before wrapping */
+            max-width: 500px; /* Maximum width for the introduction text */
+            text-align: center; /* Center the text */
         }
-        @keyframes spinner {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        /* Styling for the form container, ensuring it maintains a reasonable size */
+        .form-container {
+            flex: 1; /* Allow it to grow and shrink */
+            min-width: 300px; /* Minimum width for the form box */
+            max-width: 500px; /* Maximum width for the form box */
         }
-        /* Basic styling for messages (can be enhanced by Tailwind classes) */
-        #message-container > div {
-            min-width: 200px;
-            max-width: 350px;
+
+        /* Responsive adjustments for smaller screens */
+        @media (max-width: 768px) {
+            .intro-container {
+                flex-direction: column; /* Stack elements vertically on small screens */
+                gap: 2rem; /* Reduce gap when stacked */
+            }
         }
     </style>
 </head>
-<body class="antialiased">
-    <div id="app-content-container">
-        <div class="flex items-center justify-center h-screen bg-gray-900 text-gray-400">
-            <div class="text-center">
-                <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mx-auto mb-4"></div>
-                <p>Loading WebX Journal...</p>
-            </div>
+<body>
+    <div id="app-content-wrapper" class="intro-container">
+        <div class="app-introduction">
+            <h1 class="text-5xl font-extrabold mb-4 text-indigo-400">WebX Journal</h1>
+            <p class="text-xl text-gray-300 leading-relaxed">
+                Your secure, personal journal.<br>Anytime, anywhere.
+            </p>
+            <p class="mt-4 text-gray-400 text-sm">
+                All entries are securely encrypted right in your browser with your master password.
+            </p>
         </div>
+
+        <div id="app-content-container" class="form-container">
+            </div>
     </div>
 
     <script type="module" src="src/main.js"></script>
+
+    <script>
+        window.WebXJournal = {};
+        // Functions from other modules (auth, db, ui, utils) will be attached to this object by main.js
+    </script>
 </body>
 </html>
