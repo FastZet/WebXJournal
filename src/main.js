@@ -22,12 +22,23 @@ import {
     USER_PROFILE_STORE,
     JOURNAL_ENTRIES_STORE
 } from './storage.js';
-import * as ui from './ui.js';
-import * as crypto from './crypto.js'; // This line is not directly affected, but keeping for completeness
+// Corrected import: Import individual functions from ui.js
 import {
-    displayMessage,
-    showLoadingOverlay,
-    hideLoadingOverlay,
+    renderMainJournalApp,
+    renderAuthForms,
+    showJournalEntryEditor,
+    clearJournalEntryForm,
+    showJournalEntriesList,
+    populateJournalEntryForm,
+    renderJournalEntriesList,
+    displayMessage, // This function is also in ui.js based on its usage
+    showLoadingOverlay, // Also in ui.js
+    hideLoadingOverlay // Also in ui.js
+} from './ui.js';
+import * as crypto from './crypto.js';
+import {
+    // Only functions that are truly unique to utils.js should be here.
+    // displayMessage, showLoadingOverlay, hideLoadingOverlay moved to ui.js import.
     getCurrentTimestamp,
     readFile,
     downloadFile,
@@ -48,21 +59,21 @@ const main = {
             await initDb();
             await this.registerServiceWorker();
 
-            const isAuthenticated = await authInit(); // Direct call to the imported function
+            const isAuthenticated = await authInit();
 
             if (isAuthenticated) {
-                await ui.renderMainJournalApp();
+                await renderMainJournalApp(); // Direct call
                 await this.loadAllJournalEntries();
             } else {
-                ui.renderAuthForms();
+                renderAuthForms(); // Direct call
             }
 
             this.setupEventListeners(); // Setup general event listeners
         } catch (error) {
             console.error('Initialization failed:', error);
-            displayMessage(`Failed to initialize: ${error.message}`, 'error');
+            displayMessage(`Failed to initialize: ${error.message}`, 'error'); // Direct call
         } finally {
-            hideLoadingOverlay();
+            hideLoadingOverlay(); // Direct call
         }
     },
 
@@ -107,12 +118,12 @@ const main = {
                 const entryId = event.target.dataset.id;
                 await this.deleteJournalEntry(entryId);
             } else if (event.target.id === 'newEntryBtn') {
-                ui.showJournalEntryEditor('new');
+                showJournalEntryEditor('new'); // Direct call
                 currentJournalEntryId = null; // Reset for new entry
             } else if (event.target.id === 'cancelEditBtn') {
-                ui.showJournalEntriesList();
+                showJournalEntriesList(); // Direct call
                 currentJournalEntryId = null;
-                ui.clearJournalEntryForm();
+                clearJournalEntryForm(); // Direct call
             } else if (event.target.id === 'exportDataBtn') {
                 await this.handleExportData();
             } else if (event.target.id === 'importDataBtn') {
@@ -155,7 +166,7 @@ const main = {
         try {
             await registerUser(masterPassword);
             displayMessage('Registration successful! Please log in.', 'success');
-            ui.renderAuthForms(); // Show login form
+            renderAuthForms(); // Direct call
         } catch (error) {
             console.error('Registration failed:', error);
             displayMessage(`Registration failed: ${error.message}`, 'error');
@@ -176,7 +187,7 @@ const main = {
             const success = await loginUser(masterPassword);
             if (success) {
                 displayMessage('Login successful!', 'success');
-                await ui.renderMainJournalApp();
+                await renderMainJournalApp(); // Direct call
                 await this.loadAllJournalEntries();
             } else {
                 displayMessage('Incorrect master password.', 'error');
@@ -228,8 +239,8 @@ const main = {
                 displayMessage('Entry saved successfully!', 'success');
             }
 
-            ui.clearJournalEntryForm();
-            ui.showJournalEntriesList();
+            clearJournalEntryForm(); // Direct call
+            showJournalEntriesList(); // Direct call
             await this.loadAllJournalEntries();
             currentJournalEntryId = null; // Reset
         } catch (error) {
@@ -274,11 +285,11 @@ const main = {
                 }
             }));
             allJournalEntries = decryptedEntries.sort((a, b) => b.timestamp - a.timestamp); // Sort by newest first
-            ui.renderJournalEntriesList(allJournalEntries);
+            renderJournalEntriesList(allJournalEntries); // Direct call
         } catch (error) {
             console.error('Loading entries failed:', error);
             displayMessage(`Failed to load entries: ${error.message}`, 'error');
-            ui.renderJournalEntriesList([]); // Clear list on error
+            renderJournalEntriesList([]); // Direct call // Clear list on error
         } finally {
             hideLoadingOverlay();
         }
@@ -299,8 +310,8 @@ const main = {
             if (encryptedEntry) {
                 const decryptedTitle = await crypto.decrypt(encryptedEntry.title, encryptionKey);
                 const decryptedContent = await crypto.decrypt(encryptedEntry.content, encryptionKey);
-                ui.populateJournalEntryForm(decryptedTitle, decryptedContent);
-                ui.showJournalEntryEditor('edit');
+                populateJournalEntryForm(decryptedTitle, decryptedContent); // Direct call
+                showJournalEntryEditor('edit'); // Direct call
                 currentJournalEntryId = entryId;
             } else {
                 displayMessage('Entry not found.', 'error');
@@ -326,8 +337,8 @@ const main = {
             await deleteJournalEntry(entryId);
             displayMessage('Entry deleted successfully!', 'success');
             await this.loadAllJournalEntries();
-            ui.clearJournalEntryForm();
-            ui.showJournalEntriesList();
+            clearJournalEntryForm(); // Direct call
+            showJournalEntriesList(); // Direct call
         } catch (error) {
             console.error('Deleting entry failed:', error);
             displayMessage(`Failed to delete entry: ${error.message}`, 'error');
@@ -417,7 +428,7 @@ const main = {
             displayMessage(`Import failed: ${error.message}`, 'error');
             // Ensure UI state is consistent after failed import
             await logout(); // Clear current session
-            ui.renderAuthForms(); // Show login form
+            renderAuthForms(); // Direct call // Show login form
         } finally {
             hideLoadingOverlay();
         }
@@ -434,7 +445,7 @@ const main = {
         try {
             await logout();
             allJournalEntries = []; // Clear cached entries
-            ui.renderAuthForms(); // Show login/register forms
+            renderAuthForms(); // Direct call // Show login/register forms
             displayMessage('Logged out successfully.', 'info');
         } catch (error) {
             console.error('Logout failed:', error);
@@ -453,7 +464,7 @@ const main = {
             await clearAllData();
             await logout(); // Clear current session state
             allJournalEntries = []; // Clear cached entries
-            ui.renderAuthForms(); // Show login/register forms
+            renderAuthForms(); // Direct call // Show login/register forms
             displayMessage('All application data cleared successfully!', 'success');
         } catch (error) {
             console.error('Clearing all data failed:', error);
