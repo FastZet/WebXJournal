@@ -1,10 +1,11 @@
 // src/main.js
 
+// Corrected import: Import the 'utils' object directly
 import * as auth from './auth.js';
 import * as storage from './storage.js';
 import * as ui from './ui.js';
 import * as crypto from './crypto.js';
-import * as utils from './utils.js';
+import { utils } from './utils.js'; // <--- CHANGE IS HERE
 
 let currentJournalEntryId = null; // Stores the ID of the currently selected entry for editing
 let allJournalEntries = []; // Cache for all entries
@@ -15,7 +16,7 @@ const main = {
      * checking authentication status, and loading entries.
      */
     init: async function() {
-        utils.showLoadingOverlay();
+        utils.showLoadingOverlay(); // This call will now correctly reference the function
         try {
             await storage.initDb();
             await this.registerServiceWorker();
