@@ -1,11 +1,19 @@
 // src/main.js
 
-// Corrected import: Import the 'utils' object directly
 import * as auth from './auth.js';
 import * as storage from './storage.js';
 import * as ui from './ui.js';
 import * as crypto from './crypto.js';
-import { utils } from './utils.js'; // <--- CHANGE IS HERE
+// Corrected import: Import individual functions from utils.js
+import {
+    displayMessage,
+    showLoadingOverlay,
+    hideLoadingOverlay,
+    getCurrentTimestamp,
+    readFile,
+    downloadFile,
+    safeJSONParse
+} from './utils.js';
 
 let currentJournalEntryId = null; // Stores the ID of the currently selected entry for editing
 let allJournalEntries = []; // Cache for all entries
@@ -16,7 +24,7 @@ const main = {
      * checking authentication status, and loading entries.
      */
     init: async function() {
-        utils.showLoadingOverlay(); // This call will now correctly reference the function
+        showLoadingOverlay(); // Direct call to the imported function
         try {
             await storage.initDb();
             await this.registerServiceWorker();
@@ -34,9 +42,9 @@ const main = {
             this.setupEventListeners(); // Setup general event listeners
         } catch (error) {
             console.error('Initialization failed:', error);
-            utils.displayMessage(`Failed to initialize: ${error.message}`, 'error');
+            displayMessage(`Failed to initialize: ${error.message}`, 'error'); // Direct call
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay(); // Direct call
         }
     },
 
@@ -116,25 +124,25 @@ const main = {
      * @param {HTMLFormElement} form - The registration form element.
      */
     handleRegister: async function(form) {
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         const masterPassword = form.masterPassword.value;
         const confirmPassword = form.confirmPassword.value;
 
         if (masterPassword !== confirmPassword) {
-            utils.displayMessage('Passwords do not match!', 'error');
-            utils.hideLoadingOverlay();
+            displayMessage('Passwords do not match!', 'error');
+            hideLoadingOverlay();
             return;
         }
 
         try {
             await auth.registerUser(masterPassword);
-            utils.displayMessage('Registration successful! Please log in.', 'success');
+            displayMessage('Registration successful! Please log in.', 'success');
             ui.renderAuthForms(); // Show login form
         } catch (error) {
             console.error('Registration failed:', error);
-            utils.displayMessage(`Registration failed: ${error.message}`, 'error');
+            displayMessage(`Registration failed: ${error.message}`, 'error');
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     },
 
@@ -143,23 +151,23 @@ const main = {
      * @param {HTMLFormElement} form - The login form element.
      */
     handleLogin: async function(form) {
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         const masterPassword = form.masterPassword.value;
 
         try {
             const success = await auth.loginUser(masterPassword);
             if (success) {
-                utils.displayMessage('Login successful!', 'success');
+                displayMessage('Login successful!', 'success');
                 await ui.renderMainJournalApp();
                 await this.loadAllJournalEntries();
             } else {
-                utils.displayMessage('Incorrect master password.', 'error');
+                displayMessage('Incorrect master password.', 'error');
             }
         } catch (error) {
             console.error('Login failed:', error);
-            utils.displayMessage(`Login failed: ${error.message}`, 'error');
+            displayMessage(`Login failed: ${error.message}`, 'error');
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     },
 
@@ -168,13 +176,13 @@ const main = {
      * @param {HTMLFormElement} form - The journal entry form.
      */
     handleSaveJournalEntry: async function(form) {
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         const title = form.title.value;
         const content = form.content.value;
 
         if (!title.trim() || !content.trim()) {
-            utils.displayMessage('Title and content cannot be empty.', 'error');
-            utils.hideLoadingOverlay();
+            displayMessage('Title and content cannot be empty.', 'error');
+            hideLoadingOverlay();
             return;
         }
 
@@ -188,18 +196,18 @@ const main = {
             const encryptedContent = await crypto.encrypt(content, encryptionKey);
 
             const entry = {
-                id: currentJournalEntryId || utils.getCurrentTimestamp(), // Use current ID for update, new timestamp for new
-                timestamp: utils.getCurrentTimestamp(),
+                id: currentJournalEntryId || getCurrentTimestamp(), // Use current ID for update, new timestamp for new
+                timestamp: getCurrentTimestamp(),
                 title: encryptedTitle,
                 content: encryptedContent
             };
 
             if (currentJournalEntryId) {
                 await storage.updateJournalEntry(entry);
-                utils.displayMessage('Entry updated successfully!', 'success');
+                displayMessage('Entry updated successfully!', 'success');
             } else {
                 await storage.addJournalEntry(entry);
-                utils.displayMessage('Entry saved successfully!', 'success');
+                displayMessage('Entry saved successfully!', 'success');
             }
 
             ui.clearJournalEntryForm();
@@ -208,9 +216,9 @@ const main = {
             currentJournalEntryId = null; // Reset
         } catch (error) {
             console.error('Saving entry failed:', error);
-            utils.displayMessage(`Failed to save entry: ${error.message}`, 'error');
+            displayMessage(`Failed to save entry: ${error.message}`, 'error');
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     },
 
@@ -218,7 +226,7 @@ const main = {
      * Loads and displays all journal entries.
      */
     loadAllJournalEntries: async function() {
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         try {
             const encryptionKey = await auth.getCurrentEncryptionKey();
             if (!encryptionKey) {
@@ -251,10 +259,10 @@ const main = {
             ui.renderJournalEntriesList(allJournalEntries);
         } catch (error) {
             console.error('Loading entries failed:', error);
-            utils.displayMessage(`Failed to load entries: ${error.message}`, 'error');
+            displayMessage(`Failed to load entries: ${error.message}`, 'error');
             ui.renderJournalEntriesList([]); // Clear list on error
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     },
 
@@ -263,7 +271,7 @@ const main = {
      * @param {string} entryId - The ID of the entry to edit.
      */
     editJournalEntry: async function(entryId) {
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         try {
             const encryptionKey = await auth.getCurrentEncryptionKey();
             if (!encryptionKey) {
@@ -277,13 +285,13 @@ const main = {
                 ui.showJournalEntryEditor('edit');
                 currentJournalEntryId = entryId;
             } else {
-                utils.displayMessage('Entry not found.', 'error');
+                displayMessage('Entry not found.', 'error');
             }
         } catch (error) {
             console.error('Editing entry failed:', error);
-            utils.displayMessage(`Failed to load entry for editing: ${error.message}`, 'error');
+            displayMessage(`Failed to load entry for editing: ${error.message}`, 'error');
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     },
 
@@ -295,18 +303,18 @@ const main = {
         if (!confirm('Are you sure you want to delete this entry?')) {
             return;
         }
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         try {
             await storage.deleteJournalEntry(entryId);
-            utils.displayMessage('Entry deleted successfully!', 'success');
+            displayMessage('Entry deleted successfully!', 'success');
             await this.loadAllJournalEntries();
             ui.clearJournalEntryForm();
             ui.showJournalEntriesList();
         } catch (error) {
             console.error('Deleting entry failed:', error);
-            utils.displayMessage(`Failed to delete entry: ${error.message}`, 'error');
+            displayMessage(`Failed to delete entry: ${error.message}`, 'error');
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     },
 
@@ -314,17 +322,17 @@ const main = {
      * Handles the export of all encrypted data.
      */
     handleExportData: async function() {
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         try {
             const masterPassword = prompt("Please enter your master password to export data:");
             if (!masterPassword) {
-                utils.displayMessage("Export cancelled.", "info");
+                displayMessage("Export cancelled.", "info");
                 return;
             }
 
             const isAuthenticated = await auth.loginUser(masterPassword); // Re-authenticate for export
             if (!isAuthenticated) {
-                utils.displayMessage("Incorrect master password. Export failed.", "error");
+                displayMessage("Incorrect master password. Export failed.", "error");
                 return;
             }
 
@@ -336,14 +344,14 @@ const main = {
             const exportedData = await auth.exportKeys(encryptionKey); // Get encrypted user profile
             exportedData.journalEntries = await storage.getAllJournalEntries(); // Get all encrypted entries
 
-            const filename = `webx-journal-export-${utils.getCurrentTimestamp()}.json`;
-            utils.downloadFile(JSON.stringify(exportedData, null, 2), filename, 'application/json');
-            utils.displayMessage('Data exported successfully!', 'success');
+            const filename = `webx-journal-export-${getCurrentTimestamp()}.json`;
+            downloadFile(JSON.stringify(exportedData, null, 2), filename, 'application/json');
+            displayMessage('Data exported successfully!', 'success');
         } catch (error) {
             console.error('Export failed:', error);
-            utils.displayMessage(`Export failed: ${error.message}`, 'error');
+            displayMessage(`Export failed: ${error.message}`, 'error');
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     },
 
@@ -352,10 +360,10 @@ const main = {
      * @param {File} file - The file to import.
      */
     handleImportData: async function(file) {
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         try {
-            const fileContent = await utils.readFile(file);
-            const importedData = utils.safeJSONParse(fileContent);
+            const fileContent = await readFile(file);
+            const importedData = safeJSONParse(fileContent);
 
             if (!importedData || !importedData.userProfile || !importedData.journalEntries) {
                 throw new Error("Invalid import file format.");
@@ -363,7 +371,7 @@ const main = {
 
             const masterPassword = prompt("Please enter your master password for the imported data:");
             if (!masterPassword) {
-                utils.displayMessage("Import cancelled.", "info");
+                displayMessage("Import cancelled.", "info");
                 return;
             }
 
@@ -383,18 +391,18 @@ const main = {
                 await storage.addJournalEntry(entry);
             }
 
-            utils.displayMessage('Data imported successfully! Please refresh or re-login.', 'success');
+            displayMessage('Data imported successfully! Please refresh or re-login.', 'success');
             // Force a reload or full re-initialization to ensure new data is loaded
             window.location.reload();
 
         } catch (error) {
             console.error('Import failed:', error);
-            utils.displayMessage(`Import failed: ${error.message}`, 'error');
+            displayMessage(`Import failed: ${error.message}`, 'error');
             // Ensure UI state is consistent after failed import
             await auth.logout(); // Clear current session
             ui.renderAuthForms(); // Show login form
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     },
 
@@ -405,17 +413,17 @@ const main = {
         if (!confirm('Are you sure you want to log out?')) {
             return;
         }
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         try {
             await auth.logout();
             allJournalEntries = []; // Clear cached entries
             ui.renderAuthForms(); // Show login/register forms
-            utils.displayMessage('Logged out successfully.', 'info');
+            displayMessage('Logged out successfully.', 'info');
         } catch (error) {
             console.error('Logout failed:', error);
-            utils.displayMessage(`Logout failed: ${error.message}`, 'error');
+            displayMessage(`Logout failed: ${error.message}`, 'error');
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     },
 
@@ -423,18 +431,18 @@ const main = {
      * Handles clearing all application data (user profile and journal entries).
      */
     handleClearAllData: async function() {
-        utils.showLoadingOverlay();
+        showLoadingOverlay();
         try {
             await storage.clearAllData();
             await auth.logout(); // Clear current session state
             allJournalEntries = []; // Clear cached entries
             ui.renderAuthForms(); // Show login/register forms
-            utils.displayMessage('All application data cleared successfully!', 'success');
+            displayMessage('All application data cleared successfully!', 'success');
         } catch (error) {
             console.error('Clearing all data failed:', error);
-            utils.displayMessage(`Failed to clear all data: ${error.message}`, 'error');
+            displayMessage(`Failed to clear all data: ${error.message}`, 'error');
         } finally {
-            utils.hideLoadingOverlay();
+            hideLoadingOverlay();
         }
     }
 };
