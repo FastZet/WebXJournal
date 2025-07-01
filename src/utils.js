@@ -1,80 +1,118 @@
 // src/utils.js
 
 /**
- * @fileoverview Utility functions for WebX Journal, including message display
- * and unique ID generation.
- */
-
-// A simple global container for messages (populated by ui.js)
-let globalMessageContainer = null;
-
-/**
- * Initializes the global message container. This should be called once,
- * preferably by ui.js when the main app structure is rendered.
- * @param {HTMLElement} container The DOM element designated for messages.
- */
-export function initializeMessageContainer(container) {
-    globalMessageContainer = container;
-}
-
-/**
  * Displays a temporary message to the user.
- * @param {string} message The message content.
- * @param {string} typeClasses CSS classes for styling the message (e.g., 'bg-green-500', 'text-red-400').
- * @param {string} [targetElementId] Optional ID of an element to append the message to, instead of the global container.
- * Useful for contextual messages within a specific UI component.
+ * @param {string} message - The message to display.
+ * @param {string} type - The type of message (e.g., 'success', 'error', 'info').
  */
-export function displayMessage(message, typeClasses = 'text-gray-100 bg-gray-700', targetElementId = null) {
-    let container = globalMessageContainer;
-
-    if (targetElementId) {
-        const specificTarget = document.getElementById(targetElementId);
-        if (specificTarget) {
-            container = specificTarget;
-        } else {
-            console.warn(`Target element with ID '${targetElementId}' not found for message.`);
-            // Fallback to global container if specific target not found
-        }
-    }
-
-    if (!container) {
+export function displayMessage(message, type = 'info') {
+    const messageContainer = document.getElementById('messageContainer');
+    const messageText = document.getElementById('messageText');
+    if (!messageContainer || !messageText) {
         console.warn('Message container not initialized. Message will be logged only:', message);
-        console.log(`Message: ${message} (Type: ${typeClasses})`);
+        console.warn(`Message: ${message} (Type: ${type})`);
         return;
     }
 
-    const messageElement = document.createElement('div');
-    messageElement.className = `p-3 rounded-md shadow-lg mb-2 text-sm transition-all duration-300 ease-out transform translate-x-0 opacity-100 ${typeClasses}`;
-    messageElement.textContent = message;
+    messageText.textContent = message;
+    messageContainer.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg z-50 text-white transition-opacity duration-300`;
 
-    // Add a fade-out animation and then remove
+    // Apply Tailwind CSS classes based on message type
+    switch (type) {
+        case 'success':
+            messageContainer.classList.add('bg-green-600', 'text-white');
+            break;
+        case 'error':
+            messageContainer.classList.add('bg-red-600', 'text-white');
+            break;
+        case 'info':
+        default:
+            messageContainer.classList.add('bg-blue-600', 'text-white');
+            break;
+    }
+
+    messageContainer.classList.remove('opacity-0', 'hidden');
+    messageContainer.classList.add('opacity-100');
+
     setTimeout(() => {
-        messageElement.classList.add('opacity-0', 'translate-x-full');
-        messageElement.addEventListener('transitionend', () => {
-            messageElement.remove();
-        });
-    }, 5000); // Message visible for 5 seconds
-
-    // Prepend to show newest messages at the top
-    container.prepend(messageElement);
+        messageContainer.classList.remove('opacity-100');
+        messageContainer.classList.add('opacity-0');
+        messageContainer.addEventListener('transitionend', () => {
+            messageContainer.classList.add('hidden');
+        }, { once: true });
+    }, 3000); // Message disappears after 3 seconds
 }
 
 /**
- * Generates a simple unique ID using timestamp and a random number.
- * Not cryptographically secure, but sufficient for local IndexedDB keys.
- * @returns {string} A unique ID string.
+ * Shows the loading overlay.
  */
-export function generateUniqueId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+export function showLoadingOverlay() {
+    const loader = document.getElementById('loadingOverlay');
+    if (loader) {
+        loader.classList.remove('hidden');
+    }
 }
 
 /**
- * Escapes HTML to prevent XSS attacks when displaying user-generated content.
- * @param {string} text The text to escape.
- * @returns {string} The HTML-escaped string.
+ * Hides the loading overlay.
  */
-export function escapeHTML(text) {
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(text));
-    return div.innerHTML;
+export function hideLoadingOverlay() {
+    const loader = document.getElementById('loadingOverlay');
+    if (loader) {
+        loader.classList.add('hidden');
+    }
+}
+
+/**
+ * Gets the current timestamp.
+ * @returns {number} - The current timestamp.
+ */
+export function getCurrentTimestamp() {
+    return Date.now();
+}
+
+/**
+ * Reads the content of a file.
+ * @param {File} file - The file to read.
+ * @returns {Promise<string>} - A promise that resolves with the file content.
+ */
+export function readFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(event.target.result);
+        reader.onerror = (error) => reject(error);
+        reader.readAsText(file);
+    });
+}
+
+/**
+ * Downloads content as a file.
+ * @param {string} content - The content to download.
+ * @param {string} filename - The name of the file.
+ * @param {string} contentType - The MIME type of the file.
+ */
+export function downloadFile(content, filename, contentType) {
+    const blob = new Blob([content], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * Safely parses JSON string.
+ * @param {string} jsonString - The JSON string to parse.
+ * @returns {object|null} - The parsed object or null if parsing fails.
+ */
+export function safeJSONParse(jsonString) {
+    try {
+        return JSON.parse(jsonString);
+    } catch (e) {
+        console.error("Error parsing JSON:", e);
+        return null;
+    }
 }
