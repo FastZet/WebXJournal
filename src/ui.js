@@ -1,6 +1,7 @@
 // src/ui.js
 
 const selectors = {
+    appContentContainer: '#app-content-container', // New selector for the main app content area
     authSection: '#authSection',
     mainJournalSection: '#mainJournalSection',
     journalEntryListSection: '#journalEntryListSection',
@@ -10,7 +11,12 @@ const selectors = {
     journalEntryTitle: '#journalEntryTitle',
     journalEntryContent: '#journalEntryContent',
     messageContainer: '#messageContainer',
-    loadingOverlay: '#loadingOverlay'
+    loadingOverlay: '#loadingOverlay',
+    loginRegisterContainer: '#loginRegisterContainer', // Selector for the form container
+    registerForm: '#registerForm',
+    loginForm: '#loginForm',
+    showLoginLink: '#showLogin',
+    showRegisterLink: '#showRegister'
 };
 
 /**
@@ -48,16 +54,73 @@ export function toggleVisibility(selector) {
 
 /**
  * Renders the authentication forms (login/register).
+ * This function now also injects the HTML for the forms.
+ * @param {boolean} showRegisterDefault - If true, shows register form by default; otherwise, login.
  */
-export function renderAuthForms() {
+export function renderAuthForms(showRegisterDefault = true) {
+    hideElement(selectors.loadingOverlay); // Ensure loading overlay is hidden
+
+    // Show the main app content container
+    showElement(selectors.appContentContainer);
+
     hideElement(selectors.mainJournalSection);
     showElement(selectors.authSection);
+
+    const container = document.querySelector(selectors.loginRegisterContainer);
+    if (container) {
+        container.innerHTML = `
+            <form id="registerForm" class="space-y-6 bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700">
+                <h2 class="mt-6 text-center text-3xl font-extrabold text-white">Register</h2>
+                <input type="password" id="registerMasterPassword" name="masterPassword" required class="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 placeholder-gray-400 text-white bg-gray-700 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="Master Password">
+                <input type="password" id="registerConfirmPassword" name="confirmPassword" required class="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 placeholder-gray-400 text-white bg-gray-700 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="Confirm Password">
+                <button type="submit" class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Register</button>
+                <p class="text-center text-sm text-gray-400">Already have an account? <a href="#" id="showLogin" class="font-medium text-blue-500 hover:text-blue-400">Log In</a></p>
+            </form>
+
+            <form id="loginForm" class="space-y-6 bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 hidden">
+                <h2 class="mt-6 text-center text-3xl font-extrabold text-white">Login</h2>
+                <input type="password" id="loginMasterPassword" name="masterPassword" required class="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 placeholder-gray-400 text-white bg-gray-700 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="Master Password">
+                <button type="submit" class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Login</button>
+                <p class="text-center text-sm text-gray-400">Don't have an account? <a href="#" id="showRegister" class="font-medium text-blue-500 hover:text-blue-400">Register</a></p>
+            </form>
+        `;
+
+        // Set initial form visibility
+        const registerForm = document.querySelector(selectors.registerForm);
+        const loginForm = document.querySelector(selectors.loginForm);
+
+        if (showRegisterDefault) {
+            showElement(selectors.registerForm);
+            hideElement(selectors.loginForm);
+        } else {
+            showElement(selectors.loginForm);
+            hideElement(selectors.registerForm);
+        }
+
+        // Add event listeners for toggling forms
+        document.querySelector(selectors.showLoginLink)?.addEventListener('click', (e) => {
+            e.preventDefault();
+            showElement(selectors.loginForm);
+            hideElement(selectors.registerForm);
+            displayMessage('', 'info'); // Clear any previous messages
+        });
+
+        document.querySelector(selectors.showRegisterLink)?.addEventListener('click', (e) => {
+            e.preventDefault();
+            showElement(selectors.registerForm);
+            hideElement(selectors.loginForm);
+            displayMessage('', 'info'); // Clear any previous messages
+        });
+    }
 }
 
 /**
  * Renders the main journal application interface.
  */
 export function renderMainJournalApp() {
+    hideElement(selectors.loadingOverlay); // Ensure loading overlay is hidden
+    showElement(selectors.appContentContainer); // Show the main app content container
+
     hideElement(selectors.authSection);
     showElement(selectors.mainJournalSection);
     showElement(selectors.journalEntryListSection); // Default view
@@ -77,11 +140,16 @@ export function displayMessage(message, type = 'info') {
         return;
     }
     container.textContent = message;
-    container.className = `p-3 rounded-md text-center text-sm ${type === 'success' ? 'bg-green-500 text-white' : type === 'error' ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'}`;
+    // Remove previous type classes
+    container.classList.remove('bg-green-500', 'bg-red-500', 'bg-blue-500', 'text-white');
+    container.classList.add(
+        type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500',
+        'text-white'
+    );
     showElement(selectors.messageContainer);
 
     // Auto-hide messages after 5 seconds, except for errors
-    if (type !== 'error') {
+    if (type !== 'error' && message !== '') { // Only hide if message is not empty
         setTimeout(() => {
             hideElement(selectors.messageContainer);
         }, 5000);
@@ -175,6 +243,7 @@ export function renderJournalEntriesList(entries) {
  */
 export function showLoadingOverlay() {
     showElement(selectors.loadingOverlay);
+    hideElement(selectors.appContentContainer); // Hide app content when loading
 }
 
 /**
@@ -182,4 +251,5 @@ export function showLoadingOverlay() {
  */
 export function hideLoadingOverlay() {
     hideElement(selectors.loadingOverlay);
+    // Note: appContentContainer is shown by renderAuthForms or renderMainJournalApp
 }
