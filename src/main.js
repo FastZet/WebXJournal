@@ -1,6 +1,5 @@
 // src/main.js
 
-// Corrected import: Import individual functions from auth.js
 import {
     init as authInit, // Renamed to avoid conflict with main.init
     registerUser,
@@ -24,7 +23,7 @@ import {
     JOURNAL_ENTRIES_STORE
 } from './storage.js';
 import * as ui from './ui.js';
-import * as crypto from './crypto.js';
+import * as crypto from './crypto.js'; // This line is not directly affected, but keeping for completeness
 import {
     displayMessage,
     showLoadingOverlay,
@@ -49,8 +48,7 @@ const main = {
             await initDb();
             await this.registerServiceWorker();
 
-            // Direct call to the imported authInit function
-            const isAuthenticated = await authInit(); // <--- CHANGE IS HERE
+            const isAuthenticated = await authInit(); // Direct call to the imported function
 
             if (isAuthenticated) {
                 await ui.renderMainJournalApp();
@@ -155,7 +153,7 @@ const main = {
         }
 
         try {
-            await registerUser(masterPassword); // Direct call
+            await registerUser(masterPassword);
             displayMessage('Registration successful! Please log in.', 'success');
             ui.renderAuthForms(); // Show login form
         } catch (error) {
@@ -175,7 +173,7 @@ const main = {
         const masterPassword = form.masterPassword.value;
 
         try {
-            const success = await loginUser(masterPassword); // Direct call
+            const success = await loginUser(masterPassword);
             if (success) {
                 displayMessage('Login successful!', 'success');
                 await ui.renderMainJournalApp();
@@ -207,7 +205,7 @@ const main = {
         }
 
         try {
-            const encryptionKey = await getCurrentEncryptionKey(); // Direct call
+            const encryptionKey = await getCurrentEncryptionKey();
             if (!encryptionKey) {
                 throw new Error("Encryption key not available. Please log in again.");
             }
@@ -248,7 +246,7 @@ const main = {
     loadAllJournalEntries: async function() {
         showLoadingOverlay();
         try {
-            const encryptionKey = await getCurrentEncryptionKey(); // Direct call
+            const encryptionKey = await getCurrentEncryptionKey();
             if (!encryptionKey) {
                 throw new Error("Encryption key not available. Please log in again.");
             }
@@ -293,7 +291,7 @@ const main = {
     editJournalEntry: async function(entryId) {
         showLoadingOverlay();
         try {
-            const encryptionKey = await getCurrentEncryptionKey(); // Direct call
+            const encryptionKey = await getCurrentEncryptionKey();
             if (!encryptionKey) {
                 throw new Error("Encryption key not available. Please log in again.");
             }
@@ -350,18 +348,18 @@ const main = {
                 return;
             }
 
-            const isAuthenticated = await loginUser(masterPassword); // Direct call
+            const isAuthenticated = await loginUser(masterPassword);
             if (!isAuthenticated) {
                 displayMessage("Incorrect master password. Export failed.", "error");
                 return;
             }
 
-            const encryptionKey = await getCurrentEncryptionKey(); // Direct call
+            const encryptionKey = await getCurrentEncryptionKey();
             if (!encryptionKey) {
                 throw new Error("Encryption key not available after re-authentication.");
             }
 
-            const exportedData = await exportKeys(encryptionKey); // Direct call
+            const exportedData = await exportKeys(encryptionKey);
             exportedData.journalEntries = await getAllJournalEntries();
             const filename = `webx-journal-export-${getCurrentTimestamp()}.json`;
             downloadFile(JSON.stringify(exportedData, null, 2), filename, 'application/json');
@@ -398,7 +396,7 @@ const main = {
             await clearStore(USER_PROFILE_STORE);
             await addUserProfile(importedData.userProfile);
 
-            const isAuthenticated = await loginUser(masterPassword); // Direct call
+            const isAuthenticated = await loginUser(masterPassword);
             if (!isAuthenticated) {
                 await clearStore(USER_PROFILE_STORE); // Clean up if login fails
                 throw new Error("Incorrect master password for imported data.");
@@ -418,7 +416,7 @@ const main = {
             console.error('Import failed:', error);
             displayMessage(`Import failed: ${error.message}`, 'error');
             // Ensure UI state is consistent after failed import
-            await logout(); // Direct call // Clear current session
+            await logout(); // Clear current session
             ui.renderAuthForms(); // Show login form
         } finally {
             hideLoadingOverlay();
@@ -434,7 +432,7 @@ const main = {
         }
         showLoadingOverlay();
         try {
-            await logout(); // Direct call
+            await logout();
             allJournalEntries = []; // Clear cached entries
             ui.renderAuthForms(); // Show login/register forms
             displayMessage('Logged out successfully.', 'info');
@@ -453,7 +451,7 @@ const main = {
         showLoadingOverlay();
         try {
             await clearAllData();
-            await logout(); // Direct call // Clear current session state
+            await logout(); // Clear current session state
             allJournalEntries = []; // Clear cached entries
             ui.renderAuthForms(); // Show login/register forms
             displayMessage('All application data cleared successfully!', 'success');
