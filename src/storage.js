@@ -1,7 +1,7 @@
 // src/storage.js
 
 const DB_NAME = 'WebXJournalDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented version to ensure onupgradeneeded runs
 export const USER_PROFILE_STORE = 'user-profile';
 export const JOURNAL_ENTRIES_STORE = 'journal-entries';
 
@@ -20,9 +20,11 @@ export function initDb() {
             // Create object stores if they don't exist
             if (!db.objectStoreNames.contains(USER_PROFILE_STORE)) {
                 db.createObjectStore(USER_PROFILE_STORE, { keyPath: 'username' });
+                console.log(`Object store '${USER_PROFILE_STORE}' created.`);
             }
             if (!db.objectStoreNames.contains(JOURNAL_ENTRIES_STORE)) {
                 db.createObjectStore(JOURNAL_ENTRIES_STORE, { keyPath: 'id' });
+                console.log(`Object store '${JOURNAL_ENTRIES_STORE}' created.`);
             }
             console.log('IndexedDB upgrade complete.');
         };
