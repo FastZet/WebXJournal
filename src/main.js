@@ -1,7 +1,14 @@
 // src/main.js
 
-import * as auth from './auth.js';
-// Corrected import: Import individual functions and constants from storage.js
+// Corrected import: Import individual functions from auth.js
+import {
+    init as authInit, // Renamed to avoid conflict with main.init
+    registerUser,
+    loginUser,
+    logout,
+    getCurrentEncryptionKey,
+    exportKeys
+} from './auth.js';
 import {
     initDb,
     addUserProfile,
@@ -13,7 +20,7 @@ import {
     updateJournalEntry,
     deleteJournalEntry,
     clearAllData,
-    USER_PROFILE_STORE, // Also export constants if they are used elsewhere
+    USER_PROFILE_STORE,
     JOURNAL_ENTRIES_STORE
 } from './storage.js';
 import * as ui from './ui.js';
@@ -39,11 +46,11 @@ const main = {
     init: async function() {
         showLoadingOverlay();
         try {
-            await initDb(); // Direct call to the imported function
+            await initDb();
             await this.registerServiceWorker();
 
-            // Corrected: Use auth.init() instead of auth.checkAuthStatus()
-            const isAuthenticated = await auth.init();
+            // Direct call to the imported authInit function
+            const isAuthenticated = await authInit(); // <--- CHANGE IS HERE
 
             if (isAuthenticated) {
                 await ui.renderMainJournalApp();
@@ -148,7 +155,7 @@ const main = {
         }
 
         try {
-            await auth.registerUser(masterPassword);
+            await registerUser(masterPassword); // Direct call
             displayMessage('Registration successful! Please log in.', 'success');
             ui.renderAuthForms(); // Show login form
         } catch (error) {
@@ -168,7 +175,7 @@ const main = {
         const masterPassword = form.masterPassword.value;
 
         try {
-            const success = await auth.loginUser(masterPassword);
+            const success = await loginUser(masterPassword); // Direct call
             if (success) {
                 displayMessage('Login successful!', 'success');
                 await ui.renderMainJournalApp();
@@ -200,7 +207,7 @@ const main = {
         }
 
         try {
-            const encryptionKey = await auth.getCurrentEncryptionKey();
+            const encryptionKey = await getCurrentEncryptionKey(); // Direct call
             if (!encryptionKey) {
                 throw new Error("Encryption key not available. Please log in again.");
             }
@@ -216,10 +223,10 @@ const main = {
             };
 
             if (currentJournalEntryId) {
-                await updateJournalEntry(entry); // Direct call
+                await updateJournalEntry(entry);
                 displayMessage('Entry updated successfully!', 'success');
             } else {
-                await addJournalEntry(entry); // Direct call
+                await addJournalEntry(entry);
                 displayMessage('Entry saved successfully!', 'success');
             }
 
@@ -241,12 +248,12 @@ const main = {
     loadAllJournalEntries: async function() {
         showLoadingOverlay();
         try {
-            const encryptionKey = await auth.getCurrentEncryptionKey();
+            const encryptionKey = await getCurrentEncryptionKey(); // Direct call
             if (!encryptionKey) {
                 throw new Error("Encryption key not available. Please log in again.");
             }
 
-            const encryptedEntries = await getAllJournalEntries(); // Direct call
+            const encryptedEntries = await getAllJournalEntries();
             const decryptedEntries = await Promise.all(encryptedEntries.map(async (entry) => {
                 try {
                     const decryptedTitle = await crypto.decrypt(entry.title, encryptionKey);
@@ -286,11 +293,11 @@ const main = {
     editJournalEntry: async function(entryId) {
         showLoadingOverlay();
         try {
-            const encryptionKey = await auth.getCurrentEncryptionKey();
+            const encryptionKey = await getCurrentEncryptionKey(); // Direct call
             if (!encryptionKey) {
                 throw new Error("Encryption key not available. Please log in again.");
             }
-            const encryptedEntry = await getJournalEntry(entryId); // Direct call
+            const encryptedEntry = await getJournalEntry(entryId);
             if (encryptedEntry) {
                 const decryptedTitle = await crypto.decrypt(encryptedEntry.title, encryptionKey);
                 const decryptedContent = await crypto.decrypt(encryptedEntry.content, encryptionKey);
@@ -318,7 +325,7 @@ const main = {
         }
         showLoadingOverlay();
         try {
-            await deleteJournalEntry(entryId); // Direct call
+            await deleteJournalEntry(entryId);
             displayMessage('Entry deleted successfully!', 'success');
             await this.loadAllJournalEntries();
             ui.clearJournalEntryForm();
@@ -343,19 +350,19 @@ const main = {
                 return;
             }
 
-            const isAuthenticated = await auth.loginUser(masterPassword); // Re-authenticate for export
+            const isAuthenticated = await loginUser(masterPassword); // Direct call
             if (!isAuthenticated) {
                 displayMessage("Incorrect master password. Export failed.", "error");
                 return;
             }
 
-            const encryptionKey = await auth.getCurrentEncryptionKey();
+            const encryptionKey = await getCurrentEncryptionKey(); // Direct call
             if (!encryptionKey) {
                 throw new Error("Encryption key not available after re-authentication.");
             }
 
-            const exportedData = await auth.exportKeys(encryptionKey); // Get encrypted user profile
-            exportedData.journalEntries = await getAllJournalEntries(); // Direct call
+            const exportedData = await exportKeys(encryptionKey); // Direct call
+            exportedData.journalEntries = await getAllJournalEntries();
             const filename = `webx-journal-export-${getCurrentTimestamp()}.json`;
             downloadFile(JSON.stringify(exportedData, null, 2), filename, 'application/json');
             displayMessage('Data exported successfully!', 'success');
@@ -388,19 +395,19 @@ const main = {
             }
 
             // Temporarily import user profile to derive key, then delete
-            await clearStore(USER_PROFILE_STORE); // Direct call
-            await addUserProfile(importedData.userProfile); // Direct call
+            await clearStore(USER_PROFILE_STORE);
+            await addUserProfile(importedData.userProfile);
 
-            const isAuthenticated = await auth.loginUser(masterPassword); // Try to login with imported profile
+            const isAuthenticated = await loginUser(masterPassword); // Direct call
             if (!isAuthenticated) {
-                await clearStore(USER_PROFILE_STORE); // Direct call // Clean up if login fails
+                await clearStore(USER_PROFILE_STORE); // Clean up if login fails
                 throw new Error("Incorrect master password for imported data.");
             }
 
             // If login successful, clear all existing journal entries and import new ones
-            await clearStore(JOURNAL_ENTRIES_STORE); // Direct call
+            await clearStore(JOURNAL_ENTRIES_STORE);
             for (const entry of importedData.journalEntries) {
-                await addJournalEntry(entry); // Direct call
+                await addJournalEntry(entry);
             }
 
             displayMessage('Data imported successfully! Please refresh or re-login.', 'success');
@@ -411,7 +418,7 @@ const main = {
             console.error('Import failed:', error);
             displayMessage(`Import failed: ${error.message}`, 'error');
             // Ensure UI state is consistent after failed import
-            await auth.logout(); // Clear current session
+            await logout(); // Direct call // Clear current session
             ui.renderAuthForms(); // Show login form
         } finally {
             hideLoadingOverlay();
@@ -427,7 +434,7 @@ const main = {
         }
         showLoadingOverlay();
         try {
-            await auth.logout();
+            await logout(); // Direct call
             allJournalEntries = []; // Clear cached entries
             ui.renderAuthForms(); // Show login/register forms
             displayMessage('Logged out successfully.', 'info');
@@ -445,8 +452,8 @@ const main = {
     handleClearAllData: async function() {
         showLoadingOverlay();
         try {
-            await clearAllData(); // Direct call
-            await auth.logout(); // Clear current session state
+            await clearAllData();
+            await logout(); // Direct call // Clear current session state
             allJournalEntries = []; // Clear cached entries
             ui.renderAuthForms(); // Show login/register forms
             displayMessage('All application data cleared successfully!', 'success');
