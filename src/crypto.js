@@ -1,149 +1,137 @@
 // src/crypto.js
 
-/**
- * @fileoverview Handles all cryptographic operations for WebX Journal.
- * This includes key derivation (KDF), encryption, and decryption using Web Crypto API.
- */
-
-// Encryption algorithm and parameters
-const ALGORITHM_AES_GCM = {
-    name: 'AES-GCM',
-    ivLength: 12 // 96-bit IV as recommended for AES-GCM
-};
-
-// Key Derivation Function (KDF) algorithm and parameters
-const ALGORITHM_PBKDF2 = {
-    name: 'PBKDF2',
-    hash: 'SHA-256',
-    iterations: 200000 // A high number of iterations for stronger security
-};
-
-// Key export format
-const KEY_FORMAT = 'raw';
+const ALGORITHM = 'AES-GCM';
+const ITERATIONS = 100000; // Number of iterations for PBKDF2
+const KEY_LENGTH = 256;    // Key length in bits (256-bit key)
+const SALT_LENGTH = 16;    // Salt length in bytes
+const IV_LENGTH = 12;      // IV length in bytes for AES-GCM
 
 /**
- * Generates a cryptographically secure random salt for key derivation.
- * @returns {Uint8Array} A 16-byte (128-bit) salt.
+ * Generates a random salt.
+ * @param {number} length - The length of the salt in bytes.
+ * @returns {Uint8Array} - The generated salt.
  */
-export function generateSalt() {
-    return window.crypto.getRandomValues(new Uint8Array(16)); // 16 bytes for salt
+export function generateSalt(length = SALT_LENGTH) {
+    return window.crypto.getRandomValues(new Uint8Array(length));
 }
 
 /**
- * Generates a cryptographically secure random Initialization Vector (IV) for AES-GCM.
- * @returns {Uint8Array} A 12-byte (96-bit) IV.
+ * Derives an encryption key from a password and salt using PBKDF2.
+ * @param {string} password - The user's master password.
+ * @param {Uint8Array} salt - The salt for key derivation.
+ * @returns {Promise<CryptoKey>} - The derived encryption key.
  */
-function generateIv() {
-    return window.crypto.getRandomValues(new Uint8Array(ALGORITHM_AES_GCM.ivLength));
-}
-
-/**
- * Derives an encryption key from a master password using PBKDF2.
- * The derived key is suitable for AES-GCM encryption.
- * @param {string} password The user's master password.
- * @param {Uint8Array} salt A unique salt for key derivation.
- * @returns {Promise<CryptoKey>} A Promise that resolves with the derived CryptoKey.
- */
-export async function deriveKeyFromPassword(password, salt) {
-    // Encode password as UTF-8 Uint8Array
-    const passwordBytes = new TextEncoder().encode(password);
-
-    // Import the password as an unextractable raw key
-    const baseKey = await window.crypto.subtle.importKey(
-        KEY_FORMAT,
-        passwordBytes,
-        { name: ALGORITHM_PBKDF2.name },
-        false, // Not extractable
+export async function deriveKey(password, salt) {
+    const enc = new TextEncoder();
+    const keyMaterial = await window.crypto.subtle.importKey(
+        'raw',
+        enc.encode(password),
+        { name: 'PBKDF2' },
+        false,
         ['deriveBits', 'deriveKey']
     );
 
-    // Derive the actual encryption key using PBKDF2
-    const derivedKey = await window.crypto.subtle.deriveKey(
+    return window.crypto.subtle.deriveKey(
         {
-            name: ALGORITHM_PBKDF2.name,
+            name: 'PBKDF2',
             salt: salt,
-            iterations: ALGORITHM_PBKDF2.iterations,
-            hash: ALGORITHM_PBKDF2.hash,
+            iterations: ITERATIONS,
+            hash: 'SHA-256',
         },
-        baseKey,
-        { name: ALGORITHM_AES_GCM.name, length: 256 }, // AES-256 GCM key
-        false, // Not extractable
+        keyMaterial,
+        { name: ALGORITHM, length: KEY_LENGTH },
+        true,
         ['encrypt', 'decrypt']
     );
-
-    return derivedKey;
 }
 
 /**
- * Encrypts plaintext data using AES-GCM.
- * @param {string} plaintext The data to encrypt.
- * @param {CryptoKey} key The encryption key (derived from password).
- * @returns {Promise<{ iv: string, ciphertext: string, authTag: string }>}
- * A Promise that resolves with the IV, ciphertext, and authentication tag, all Base64 encoded.
+ * Encrypts data using AES-GCM.
+ * @param {string} data - The data to encrypt.
+ * @param {CryptoKey} key - The encryption key.
+ * @returns {Promise<{ciphertext: Uint8Array, iv: Uint8Array}>} - The encrypted data (ciphertext and IV).
  */
-export async function encrypt(plaintext, key) {
-    const iv = generateIv(); // Generate a new IV for each encryption
+export async function encrypt(data, key) {
+    const iv = window.crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+    const enc = new TextEncoder();
+    const encodedData = enc.encode(data);
 
-    // Encode plaintext as Uint8Array
-    const encoded = new TextEncoder().encode(plaintext);
-
-    const algorithm = {
-        name: ALGORITHM_AES_GCM.name,
-        iv: iv,
-    };
-
-    const ciphertextWithAuthTag = await window.crypto.subtle.encrypt(
-        algorithm,
+    const ciphertext = await window.crypto.subtle.encrypt(
+        {
+            name: ALGORITHM,
+            iv: iv,
+        },
         key,
-        encoded
+        encodedData
     );
 
-    // The result `ciphertextWithAuthTag` is an ArrayBuffer containing
-    // the actual ciphertext followed by the 16-byte authentication tag.
-    // We need to separate them.
-    const tagLength = 16; // AES-GCM produces a 16-byte (128-bit) authentication tag
-    const ciphertextBuffer = ciphertextWithAuthTag.slice(0, ciphertextWithAuthTag.byteLength - tagLength);
-    const authTagBuffer = ciphertextWithAuthTag.slice(ciphertextWithAuthTag.byteLength - tagLength);
-
-    // Convert ArrayBuffers to Base64 strings for storage
-    return {
-        iv: btoa(String.fromCharCode(...new Uint8Array(iv))),
-        ciphertext: btoa(String.fromCharCode(...new Uint8Array(ciphertextBuffer))),
-        authTag: btoa(String.fromCharCode(...new Uint8Array(authTagBuffer)))
-    };
+    return { ciphertext: new Uint8Array(ciphertext), iv: iv };
 }
 
 /**
  * Decrypts data using AES-GCM.
- * @param {string} ciphertextBase64 The Base64-encoded ciphertext.
- * @param {string} ivBase64 The Base64-encoded Initialization Vector (IV).
- * @param {string} authTagBase64 The Base64-encoded authentication tag.
- * @param {CryptoKey} key The decryption key.
- * @returns {Promise<string>} A Promise that resolves with the decrypted plaintext.
- * @throws {DOMException} If decryption fails (e.g., incorrect key, corrupted data).
+ * @param {{ciphertext: Uint8Array, iv: Uint8Array}} encryptedData - The encrypted data (ciphertext and IV).
+ * @param {CryptoKey} key - The decryption key.
+ * @returns {Promise<string>} - The decrypted data.
  */
-export async function decrypt(ciphertextBase64, ivBase64, authTagBase64, key) {
-    // Decode Base64 strings back to ArrayBuffers
-    const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
-    const ciphertext = Uint8Array.from(atob(ciphertextBase64), c => c.charCodeAt(0));
-    const authTag = Uint8Array.from(atob(authTagBase64), c => c.charCodeAt(0));
-
-    // Combine ciphertext and authTag back into a single ArrayBuffer for decryption
-    const combinedCiphertext = new Uint8Array(ciphertext.byteLength + authTag.byteLength);
-    combinedCiphertext.set(ciphertext, 0);
-    combinedCiphertext.set(authTag, ciphertext.byteLength);
-
-    const algorithm = {
-        name: ALGORITHM_AES_GCM.name,
-        iv: iv,
-    };
-
+export async function decrypt(encryptedData, key) {
+    const dec = new TextDecoder();
     const decrypted = await window.crypto.subtle.decrypt(
-        algorithm,
+        {
+            name: ALGORITHM,
+            iv: encryptedData.iv,
+        },
         key,
-        combinedCiphertext
+        encryptedData.ciphertext
     );
 
-    // Decode decrypted ArrayBuffer back to string
-    return new TextDecoder().decode(decrypted);
+    return dec.decode(decrypted);
+}
+
+/**
+ * Converts a Uint8Array to a Base64 string.
+ * @param {Uint8Array} bytes - The byte array to convert.
+ * @returns {string} - The Base64 encoded string.
+ */
+export function bytesToBase64(bytes) {
+    return btoa(String.fromCharCode.apply(null, bytes));
+}
+
+/**
+ * Converts a Base64 string to a Uint8Array.
+ * @param {string} base64 - The Base64 encoded string.
+ * @returns {Uint8Array} - The decoded byte array.
+ */
+export function base64ToBytes(base64) {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+}
+
+/**
+ * Exports a CryptoKey to a JWK format (JSON Web Key).
+ * @param {CryptoKey} key - The key to export.
+ * @returns {Promise<JsonWebKey>} - The key in JWK format.
+ */
+export async function exportCryptoKey(key) {
+    return window.crypto.subtle.exportKey('jwk', key);
+}
+
+/**
+ * Imports a CryptoKey from a JWK format.
+ * @param {JsonWebKey} jwk - The JWK to import.
+ * @returns {Promise<CryptoKey>} - The imported CryptoKey.
+ */
+export async function importCryptoKey(jwk) {
+    return window.crypto.subtle.importKey(
+        'jwk',
+        jwk,
+        { name: ALGORITHM, length: KEY_LENGTH },
+        true,
+        ['encrypt', 'decrypt']
+    );
 }
