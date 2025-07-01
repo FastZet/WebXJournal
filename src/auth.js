@@ -1,267 +1,158 @@
 // src/auth.js
 
+// Import individual functions from storage.js
+import {
+    getUserProfile,
+    addUserProfile,
+    clearStore,
+    USER_PROFILE_STORE
+} from './storage.js';
+// Import individual functions from crypto.js
+import {
+    deriveKey,
+    encrypt,
+    decrypt,
+    generateSalt,
+    bytesToBase64,
+    base64ToBytes,
+    exportCryptoKey,
+    importCryptoKey
+} from './crypto.js';
+
+
+let encryptionKey = null; // Stored in memory after successful authentication
+let currentUsername = null;
+
 /**
- * @fileoverview Handles user authentication (registration, login, logout)
- * and secure key management for WebX Journal.
+ * Initializes the authentication state.
+ * Checks if a user profile exists and attempts to auto-login.
+ * @returns {Promise<boolean>} - True if authenticated, false otherwise.
  */
-
-import * as storage from './storage.js'; // This line needs to be correctly parsed and executed
-import * as crypto from './crypto.js';
-import * as utils from './utils.js';
-import * as ui from './ui.js';
-
-// Current user's authentication state and encryption key
-let currentAuth = {
-    username: null,
-    encryptionKey: null, // CryptoKey object
-    kdfSalt: null, // Uint8Array
-    encryptedIdentity: null, // {ciphertext, iv, authTag}
-};
-
-// Data version for user profile encryption
-export const CURRENT_DATA_VERSION = 1;
-
-/**
- * Helper to get the full currentAuth object. Used internally for deletion/export.
- * @returns {object} The current authentication object.
- */
-export function getCurrentAuth() {
-    return currentAuth;
+export async function init() {
+    try {
+        const userProfile = await getUserProfile('qwerty'); // Assuming 'qwerty' is the fixed username
+        if (userProfile && userProfile.encryptedIdentity) {
+            // Attempt to re-derive key from stored salt and master password if available in session
+            // For simplicity, we won't auto-login without user interaction
+            // A more robust app might try to use a session key or prompt for password
+            console.log('User profile found. Ready for login.');
+            return false; // User profile exists, but not auto-logged in
+        } else {
+            console.log('No user profile found. Ready for registration.');
+            return false; // No user profile, not authenticated
+        }
+    } catch (error) {
+        console.error('Error initializing auth:', error);
+        return false; // Error occurred, not authenticated
+    }
 }
 
 /**
- * Retrieves the current authentication status.
- * @returns {Promise<{isLoggedIn: boolean, isRegistered: boolean, username: string|null}>}
+ * Registers a new user with a master password.
+ * @param {string} masterPassword - The user's master password.
+ * @returns {Promise<void>}
  */
-export async function getAuthStatus() {
-    // The error occurs here if 'storage' is not defined
-    const allProfileKeys = await storage.getAllProfileKeys();
-    const isRegistered = allProfileKeys.length > 0;
-    const username = currentAuth.username; // Get from current session
+export async function registerUser(masterPassword) {
+    if (await getUserProfile('qwerty')) {
+        throw new Error('User already registered.');
+    }
 
-    return {
-        isLoggedIn: !!currentAuth.username && !!currentAuth.encryptionKey,
-        isRegistered: isRegistered,
-        username: username
+    const salt = generateSalt();
+    const encryptionKeyRaw = await deriveKey(masterPassword, salt);
+    const exportedKey = await exportCryptoKey(encryptionKeyRaw);
+
+    // Encrypt a dummy value to create an 'identity' that proves key derivation works
+    const identityText = 'identity_check';
+    const encryptedIdentity = await encrypt(identityText, encryptionKeyRaw);
+
+    const userProfile = {
+        username: 'qwerty', // Fixed username for simplicity
+        kdfSalt: bytesToBase64(salt),
+        encryptedIdentity: {
+            ciphertext: bytesToBase64(encryptedIdentity.ciphertext),
+            iv: bytesToBase64(encryptedIdentity.iv)
+        },
+        version: 1
     };
+
+    await addUserProfile(userProfile);
+    console.log('User registered successfully.');
 }
 
 /**
- * Returns the current user's username.
- * @returns {string|null}
+ * Logs in a user with the master password.
+ * @param {string} masterPassword - The user's master password.
+ * @returns {Promise<boolean>} - True if login is successful, false otherwise.
  */
-export function getCurrentUsername() {
-    return currentAuth.username;
+export async function loginUser(masterPassword) {
+    const userProfile = await getUserProfile('qwerty');
+    if (!userProfile) {
+        throw new Error('User not registered. Please register first.');
+    }
+
+    const salt = base64ToBytes(userProfile.kdfSalt);
+    let derivedKey;
+    try {
+        derivedKey = await deriveKey(masterPassword, salt);
+    } catch (e) {
+        console.error("Key derivation failed:", e);
+        return false; // Password likely incorrect or derivation issue
+    }
+
+    try {
+        const iv = base64ToBytes(userProfile.encryptedIdentity.iv);
+        const ciphertext = base64ToBytes(userProfile.encryptedIdentity.ciphertext);
+        const decryptedIdentity = await decrypt({ ciphertext, iv }, derivedKey);
+
+        if (decryptedIdentity === 'identity_check') {
+            encryptionKey = derivedKey;
+            currentUsername = userProfile.username;
+            console.log('Login successful.');
+            return true;
+        } else {
+            console.warn('Decrypted identity mismatch. Incorrect password.');
+            return false;
+        }
+    } catch (error) {
+        console.error('Decryption failed during login identity check:', error);
+        return false; // Decryption failed, likely wrong password
+    }
 }
 
 /**
- * Returns the current user's encryption key.
- * @returns {CryptoKey|null}
+ * Logs out the current user.
+ */
+export async function logout() {
+    encryptionKey = null;
+    currentUsername = null;
+    console.log('Logged out.');
+    // In a real app, you might clear session storage or cookies here.
+}
+
+/**
+ * Retrieves the current in-memory encryption key.
+ * @returns {CryptoKey|null} - The encryption key if authenticated, otherwise null.
  */
 export function getCurrentEncryptionKey() {
-    return currentAuth.encryptionKey;
-}
-
-
-/**
- * Registers a new user.
- * @param {string} username The desired username.
- * @param {string} masterPassword The master password for encryption.
- * @returns {Promise<boolean>} True if registration is successful, false otherwise.
- */
-export async function registerUser(username, masterPassword) {
-    if (!username || !masterPassword) {
-        utils.displayMessage('Username and master password are required.', 'text-red-400 bg-red-800');
-        return false;
-    }
-    if (masterPassword.length < 8) {
-        utils.displayMessage('Master password must be at least 8 characters long.', 'text-red-400 bg-red-800');
-        return false;
-    }
-
-    // Check if username already exists
-    const existingProfile = await storage.getUserProfile(username);
-    if (existingProfile) {
-        utils.displayMessage('Username already exists. Please choose a different one or log in.', 'text-red-400 bg-red-800');
-        return false;
-    }
-
-    try {
-        ui.showLoadingOverlay('Registering user...');
-        const kdfSalt = crypto.generateSalt(); // Generate salt for KDF
-        const encryptionKey = await crypto.deriveKeyFromPassword(masterPassword, kdfSalt);
-
-        // Encrypt a simple identity payload (e.g., username) with the derived key
-        // This is used for integrity checking during login and ensuring the key is correct.
-        const identityPayload = {
-            username: username,
-            timestamp: Date.now(),
-            version: CURRENT_DATA_VERSION // Version of the identity payload data structure
-        };
-        const encryptedIdentity = await crypto.encrypt(JSON.stringify(identityPayload), encryptionKey);
-
-        const userProfile = {
-            username: username,
-            kdfSalt: Array.from(kdfSalt), // Store as array for IndexedDB compatibility
-            encryptedIdentity: encryptedIdentity, // Store Base64 strings
-            version: CURRENT_DATA_VERSION // Version of the user profile object itself
-        };
-
-        await storage.saveUserProfile(userProfile);
-
-        // Set current authentication state
-        currentAuth.username = username;
-        currentAuth.encryptionKey = encryptionKey;
-        currentAuth.kdfSalt = kdfSalt;
-        currentAuth.encryptedIdentity = encryptedIdentity;
-
-        utils.displayMessage('Registration successful! Logging you in...', 'text-green-400 bg-green-800');
-
-        // Render main journal app after successful registration and login
-        ui.renderMainJournalApp(document.getElementById('app-content-container'), username);
-
-        return true;
-    } catch (error) {
-        console.error('Registration failed:', error);
-        utils.displayMessage(`Registration failed: ${error.message}. Please try again.`, 'text-red-400 bg-red-800');
-        return false;
-    } finally {
-        ui.hideLoadingOverlay();
-    }
+    return encryptionKey;
 }
 
 /**
- * Logs in an existing user.
- * @param {string} username The username.
- * @param {string} masterPassword The master password.
- * @returns {Promise<boolean>} True if login is successful, false otherwise.
+ * Exports user keys (for backup/migration).
+ * Returns the raw user profile data that can be re-imported.
+ * @param {CryptoKey} key - The current active encryption key.
+ * @returns {Promise<object>} - An object containing the encrypted user profile.
  */
-export async function loginUser(username, masterPassword) {
-    if (!username || !masterPassword) {
-        utils.displayMessage('Username and master password are required.', 'text-red-400 bg-red-800');
-        return false;
+export async function exportKeys(key) {
+    if (!currentUsername) {
+        throw new Error("No user logged in to export keys.");
     }
-
-    try {
-        ui.showLoadingOverlay('Logging in...');
-        const userProfile = await storage.getUserProfile(username);
-
-        if (!userProfile) {
-            utils.displayMessage('User not found. Please register.', 'text-red-400 bg-red-800');
-            return false;
-        }
-
-        // Convert kdfSalt back to Uint8Array for key derivation
-        const kdfSalt = new Uint8Array(userProfile.kdfSalt);
-        const derivedKey = await crypto.deriveKeyFromPassword(masterPassword, kdfSalt);
-
-        // Attempt to decrypt the identity payload to verify the master password
-        let decryptedIdentity;
-        try {
-            decryptedIdentity = JSON.parse(await crypto.decrypt(
-                userProfile.encryptedIdentity.ciphertext,
-                userProfile.encryptedIdentity.iv,
-                userProfile.encryptedIdentity.authTag,
-                derivedKey
-            ));
-        } catch (decryptError) {
-            console.error('Decryption failed during login:', decryptError);
-            utils.displayMessage('Invalid username or master password.', 'text-red-400 bg-red-800');
-            return false;
-        }
-
-        // Basic sanity check: ensure decrypted username matches
-        if (decryptedIdentity.username !== username) {
-            console.error('Decrypted identity username mismatch.', decryptedIdentity, username);
-            utils.displayMessage('Login failed: Corrupted user profile.', 'text-red-400 bg-red-800');
-            return false;
-        }
-
-        // Set current authentication state
-        currentAuth.username = username;
-        currentAuth.encryptionKey = derivedKey;
-        currentAuth.kdfSalt = kdfSalt; // Store as Uint8Array for consistency
-        currentAuth.encryptedIdentity = userProfile.encryptedIdentity; // Store as is
-
-        utils.displayMessage('Login successful!', 'text-green-400 bg-green-800');
-
-        // Render main journal app after successful login
-        ui.renderMainJournalApp(document.getElementById('app-content-container'), username);
-
-        return true;
-    } catch (error) {
-        console.error('Login failed:', error);
-        utils.displayMessage(`An unexpected error occurred during login: ${error.message}`, 'text-red-400 bg-red-800');
-        return false;
-    } finally {
-        ui.hideLoadingOverlay();
+    // We export the already encrypted user profile from storage
+    const userProfile = await getUserProfile(currentUsername);
+    if (!userProfile) {
+        throw new Error("User profile not found for export.");
     }
-}
-
-/**
- * Logs out the current user. Clears in-memory session data.
- */
-export function logoutUser() {
-    currentAuth.username = null;
-    currentAuth.encryptionKey = null;
-    currentAuth.kdfSalt = null;
-    currentAuth.encryptedIdentity = null;
-    utils.displayMessage('You have been logged out.', 'text-blue-300 bg-gray-700');
-    console.log('User logged out.');
-}
-
-/**
- * Deletes the user account and all associated data from IndexedDB.
- * Requires re-entering the master password for confirmation.
- * @param {string} username The username of the account to delete.
- * @param {string} masterPassword The master password for confirmation.
- * @returns {Promise<boolean>} True if deletion is successful, false otherwise.
- */
-export async function deleteAccount(username, masterPassword) {
-    if (!username || !masterPassword) {
-        utils.displayMessage('Username and master password are required for deletion.', 'text-red-400 bg-red-800');
-        return false;
-    }
-
-    try {
-        ui.showLoadingOverlay('Deleting account...');
-        const userProfile = await storage.getUserProfile(username);
-
-        if (!userProfile) {
-            utils.displayMessage('Account not found.', 'text-red-400 bg-red-800');
-            return false;
-        }
-
-        // Verify master password before deletion
-        const kdfSalt = new Uint8Array(userProfile.kdfSalt);
-        const derivedKey = await crypto.deriveKeyFromPassword(masterPassword, kdfSalt);
-
-        // Attempt to decrypt identity payload to verify key
-        try {
-            await crypto.decrypt(
-                userProfile.encryptedIdentity.ciphertext,
-                userProfile.encryptedIdentity.iv,
-                userProfile.encryptedIdentity.authTag,
-                derivedKey
-            );
-        } catch (decryptError) {
-            console.error('Master password verification failed during deletion:', decryptError);
-            utils.displayMessage('Incorrect master password. Account deletion cancelled.', 'text-red-400 bg-red-800');
-            return false;
-        }
-
-        // Master password verified, proceed with deletion
-        await storage.clearAllData(); // Clears user profile AND all journal entries
-        logoutUser(); // Clear current session
-        ui.renderLoginForm(document.getElementById('app-content-container')); // Go back to login/register screen
-
-        utils.displayMessage('Account and all data successfully deleted.', 'text-green-400 bg-green-800');
-        return true;
-    } catch (error) {
-        console.error('Account deletion failed:', error);
-        utils.displayMessage(`Account deletion failed: ${error.message}.`, 'text-red-400 bg-red-800');
-        return false;
-    } finally {
-        ui.hideLoadingOverlay();
-    }
+    return {
+        userProfile: userProfile
+    };
 }
