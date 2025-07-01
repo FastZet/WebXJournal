@@ -1,10 +1,10 @@
 // src/main.js
 
 import * as auth from './auth.js';
-import * as storage from './storage.js';
+// Corrected import: Import the 'storage' object directly
+import { storage } from './storage.js'; // <--- CHANGE IS HERE
 import * as ui from './ui.js';
 import * as crypto from './crypto.js';
-// Corrected import: Import individual functions from utils.js
 import {
     displayMessage,
     showLoadingOverlay,
@@ -24,9 +24,9 @@ const main = {
      * checking authentication status, and loading entries.
      */
     init: async function() {
-        showLoadingOverlay(); // Direct call to the imported function
+        showLoadingOverlay();
         try {
-            await storage.initDb();
+            await storage.initDb(); // This call will now correctly reference the function
             await this.registerServiceWorker();
 
             // Corrected: Use auth.init() instead of auth.checkAuthStatus()
@@ -42,9 +42,9 @@ const main = {
             this.setupEventListeners(); // Setup general event listeners
         } catch (error) {
             console.error('Initialization failed:', error);
-            displayMessage(`Failed to initialize: ${error.message}`, 'error'); // Direct call
+            displayMessage(`Failed to initialize: ${error.message}`, 'error');
         } finally {
-            hideLoadingOverlay(); // Direct call
+            hideLoadingOverlay();
         }
     },
 
